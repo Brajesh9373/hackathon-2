@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { COMPLAINT_CATEGORIES, DELHI_DISTRICTS } from '@/data/complaints';
+import { COMPLAINT_CATEGORIES, KOPARGAON_WARDS } from '@/data/complaints';
 import { complaints as complaintsApi, resources, clearToken, getStoredUser } from '../lib/api';
 import { getSocket, connectSocket } from '../lib/socket';
 
@@ -59,7 +59,7 @@ export default function CitizenPortal() {
         setDuplicateComplaints([]);
         return;
       }
-      const districtObj = DELHI_DISTRICTS.find(d => d.id === formData.district);
+      const districtObj = KOPARGAON_WARDS.find(d => d.id === formData.district);
       if (!districtObj) return;
 
       setCheckingDuplicates(true);
@@ -603,8 +603,8 @@ export default function CitizenPortal() {
                       required
                       style={{ width: '100%' }}
                     >
-                      <option value="">Select District</option>
-                      {DELHI_DISTRICTS.map(d => (
+                      <option value="">Select Ward / वार्ड निवडा</option>
+                      {KOPARGAON_WARDS.map(d => (
                         <option key={d.id} value={d.id}>{d.name.split('/')[0].trim()}</option>
                       ))}
                     </select>

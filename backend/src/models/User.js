@@ -1,22 +1,29 @@
 const mongoose = require('mongoose');
 
-const officerProfileSchema = new mongoose.Schema({
+// Worker profile for supervisors and workers
+const workerProfileSchema = new mongoose.Schema({
   employee_id: String,
   designation: String,
-  active_complaints_count: { type: Number, default: 0 },
-  max_capacity: { type: Number, default: 20 },
+  active_tasks: { type: Number, default: 0 },
+  max_capacity: { type: Number, default: 10 },
   is_available: { type: Boolean, default: true },
+  status: {
+    type: String,
+    enum: ['AVAILABLE', 'ON_TASK', 'TRAVELLING', 'OFF_DUTY', 'UNAVAILABLE'],
+    default: 'AVAILABLE'
+  },
+  current_location: {
+    lat: Number,
+    lng: Number,
+    updated_at: Date
+  },
+  current_task_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Complaint' },
   contact_phone: String,
   scorecard: {
     total_assigned: { type: Number, default: 0 },
-    total_resolved: { type: Number, default: 0 },
-    total_disputed: { type: Number, default: 0 },
-    false_closure_rate: { type: Number, default: 0 },
-    avg_resolution_time_hours: { type: Number, default: 0 },
-    citizen_satisfaction_avg: { type: Number, default: 0 },
-    on_time_rate: { type: Number, default: 0 },
-    anomaly_flag_count: { type: Number, default: 0 },
-    credibility_score: { type: Number, default: 100 },
+    total_completed: { type: Number, default: 0 },
+    avg_completion_time_hours: { type: Number, default: 0 },
+    rating_avg: { type: Number, default: 0 },
   },
 }, { _id: false });
 
@@ -24,26 +31,49 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   mobile: { type: String, required: true, unique: true },
   email: String,
+  
+  // Kopargaon roles - simplified from VAANI
   role: {
     type: String,
     required: true,
-    enum: ['citizen', 'officer', 'department_manager', 'district_officer', 'nodal_officer', 'commissioner', 'cm_staff', 'cm', 'super_admin'],
+    enum: ['citizen', 'admin', 'supervisor', 'worker'],
     default: 'citizen',
   },
-  district: String,
-  department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+  
+  // Location
   ward: String,
-  language_preference: { type: String, enum: ['en', 'hi'], default: 'en' },
-  officer_profile: officerProfileSchema,
+  zone: String,
+  
+  // For supervisor - their department
+  module: {
+    type: String,
+    enum: ['DEVELOPMENT', 'WASTE', 'BOTH'],
+    default: 'BOTH'
+  },
+  
+  // Workers assigned to supervisor
+  assigned_workers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  
+  // For workers - which supervisor they report to
+  supervisor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  
+  language_preference: { type: String, enum: ['en', 'mr'], default: 'en' },
+  
+  worker_profile: workerProfileSchema,
+  
+  // Auth
   otp: String,
   otp_expires: Date,
   refresh_token: String,
+  
   is_active: { type: Boolean, default: true },
   last_login: Date,
+  
 }, { timestamps: true });
 
+// Indexes
 userSchema.index({ mobile: 1 }, { unique: true });
-userSchema.index({ role: 1, district: 1 });
-userSchema.index({ department: 1, role: 1 });
+userSchema.index({ role: 1 });
+userSchema.index({ supervisor_id: 1 });
 
 module.exports = mongoose.model('User', userSchema);

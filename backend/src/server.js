@@ -34,6 +34,9 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/complaints', require('./routes/complaints'));
 app.use('/api', require('./routes/api'));
+app.use('/api/priority', require('../priority_engine/index'));
+app.use('/api/civic', require('./routes/priority')); // Kopargaon Civic Platform integration
+app.use('/api/verification', require('./routes/verification')); // AI Verification
 app.use('/mock', require('./routes/mock'));
 
 // Health check
@@ -98,6 +101,10 @@ connectDB().then(() => {
         await checkCopyPasteSpeakingOrders();
       } catch (err) { console.error('Cron error (daily):', err.message); }
     });
+
+    // Initialize verification state on startup
+    const { initVerificationState } = require('./controllers/verificationController');
+    initVerificationState().catch(err => console.error('Verification init error:', err.message));
 
     console.log('⏰ Cron jobs scheduled: SLA (30min), Anti-gaming (hourly), Recurrence (daily 2AM)');
   });

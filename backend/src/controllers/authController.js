@@ -80,7 +80,9 @@ exports.verifyOtp = async (req, res) => {
     user.refresh_token = refreshToken;
     await user.save();
 
-    const populatedUser = await User.findById(user._id).populate('department', 'name code');
+    const populatedUser = await User.findById(user._id)
+      .populate('supervisor_id', 'name')
+      .populate('assigned_workers', 'name');
 
     res.json({
       success: true,
@@ -91,9 +93,13 @@ exports.verifyOtp = async (req, res) => {
         name: user.name,
         mobile: user.mobile,
         role: user.role,
-        district: user.district,
+        ward: user.ward,
+        zone: user.zone,
+        module: user.module,
         language_preference: user.language_preference,
-        department: populatedUser.department,
+        supervisor_id: populatedUser.supervisor_id?._id,
+        supervisor_name: populatedUser.supervisor_id?.name,
+        worker_profile: user.worker_profile,
       },
     });
   } catch (err) {

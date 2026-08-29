@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(npm:*)",
+      "Shell(mongod:*)",
+      "Shell(pgrep:*)",
+      "Shell(docker:*)",
+      "Shell(sudo service docker start 2 >& 1)",
+      "Shell(sudo systemctl start docker 2 >& 1)",
+      "Shell(apt-cache:*)",
+      "Shell(curl -s http://localhost:27017 2 >& 1)",
+      "Shell(curl -fsSL https://pgp.mongodb.com/server-8.0.asc)",
+      "Shell(gpg:*)",
+      "Shell(tee:*)",
+      "Shell(curl -sL https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-8.0.12.tgz -o mongodb.tgz 2 >& 1)",
+      "Shell(tar:*)",
+      "Shell(ls:*)",
+      "Shell(mkdir:*)",
+      "Shell(/home/brajesh_kurkure/mongodb/bin/mongod:*)",
+      "Shell(sleep:*)",
+      "Shell(curl -s http://127.0.0.1:27017 2 >& 1)",
+      "Shell(node src/server.js 2 >& 1)",
+      "Shell(xxd:*)",
+      "Shell(pdftotext:*)",
+      "Shell(pkill -f \"node src/server.js\" 2>/dev/null || true; cd /home/brajesh_kurkure/Projects/VAANI/backend && nohup node src/server.js > /tmp/backend.log 2>&1 & sleep 3 && curl -s http://localhost:5001/api/health 2>/dev/null || echo \"Backend not responding\")",
+      "Shell(cd /home/brajesh_kurkure/Projects/VAANI/backend && node src/server.js > /tmp/backend.log 2>&1 & sleep 4 && curl -s http://localhost:5001/api/health)",
+      "Shell(pkill -f \"next dev\" 2>/dev/null || true; cd /home/brajesh_kurkure/Projects/VAANI && npm run dev > /tmp/frontend.log 2>&1 & sleep 6 && curl -s http://localhost:3000 | head -20)",
+      "Shell(node priority_engine/test-engine.js 2 >& 1)",
+      "Shell(node -e  const { ObjectiveBuilder } = require('./priority_engine/optimization/objectiveBuilder'); // Simulate what the solver passes const action = { actionType: 'ACT', expectedOutcomes: { FULL_DEPLOY: { impactReduction: 0.77, riskAvoidance: 0.89, urgencyMultiplier: 0.93 } } }; const decision = { priority: { score: 90, band: 'CRITICAL', breakdown: { impact: 77, urgency: 93, risk: 89, time: 67, context: 39 } }, confidence: { score: 65, evidence_strength: 0.75 } }; const ecv = ObjectiveBuilder.calculateECV(action, decision, { availableWorkers: 5, availableVehicles: 1 }); console.log('ECV for ACT:', JSON.stringify(ecv, null, 2)); )",
+      "Shell(node priority_engine/test-adversarial.js 2 >& 1)",
+      "Shell(curl -s -o /dev/null -w Frontend: %{http_code}\\n http://localhost:3000)",
+      "Shell(curl -s http://localhost:5001/api/health)",
+      "Shell(cat:*)",
+      "Shell(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/supervisor)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}
