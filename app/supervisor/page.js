@@ -153,6 +153,59 @@ export default function SupervisorDashboard() {
     }
   };
 
+  // Check citizen's stored location against restricted zones
+  async function checkCitizenLocation(citizenLocation) {
+    if (!citizenLocation || !citizenLocation.latitude || !citizenLocation.longitude) {
+      return { canCall: true, reason: 'No location data for citizen', nearbyPlaces: [] };
+    }
+    
+    try {
+      // Search for places near citizen's location
+      const result = await Radar.searchPlaces({
+        near: {
+          latitude: citizenLocation.latitude,
+          longitude: citizenLocation.longitude,
+        },
+        radius: 200, // 200 meters
+        limit: 20,
+      });
+      
+      const places = result.places || [];
+      
+      // Check for restricted places
+      const restrictedPlaces = places.filter(place => {
+        const category = place.categories?.[0]?.toLowerCase() || '';
+        return Object.keys(RESTRICTED_PLACE_TYPES).some(
+          type => category.includes(type) || place.name?.toLowerCase().includes(type)
+        );
+      });
+      
+      if (restrictedPlaces.length > 0) {
+        return {
+          canCall: false,
+          reason: `Citizen near restricted zone: ${restrictedPlaces[0].name}`,
+          nearbyPlaces: restrictedPlaces,
+          userLocation: { latitude: citizenLocation.latitude, longitude: citizenLocation.longitude },
+        };
+      }
+      
+      return {
+        canCall: true,
+        reason: 'Location verified - no restricted zones nearby',
+        nearbyPlaces: places.slice(0, 5),
+        userLocation: { latitude: citizenLocation.latitude, longitude: citizenLocation.longitude },
+      };
+    } catch (error) {
+      console.error('Location check error:', error);
+      return {
+        canCall: true,
+        reason: 'Location service unavailable - proceeding with call',
+        nearbyPlaces: [],
+        error: error.message,
+      };
+    }
+  }
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
@@ -429,10 +482,60 @@ export default function SupervisorDashboard() {
                 <button
                   onClick={async () => {
                     setGeofencingLoading(true);
+                    setGeofencingStatus(null);
                     try {
                       initRadar();
-                      const result = await checkLocationForCalling();
-                      setGeofencingStatus(result);
+                      
+                      // Check all pending complaints with citizen locations
+                      const pendingWithLocation = complaints.filter(c => 
+                        c.citizenLocation && 
+                        ['FILED', 'ASSIGNED', 'IN_PROGRESS'].includes(c.status)
+                      );
+                      
+                      if (pendingWithLocation.length === 0) {
+                        setGeofencingStatus({
+                          canCall: true,
+                          reason: 'No pending complaints with citizen location data',
+                          checkedComplaints: 0,
+                          restrictedCount: 0,
+                          allowedCount: 0,
+                          nearbyPlaces: [],
+                        });
+                        setGeofencingLoading(false);
+                        return;
+                      }
+                      
+                      let restrictedCount = 0;
+                      let allowedCount = 0;
+                      const restrictedComplaints = [];
+                      
+                      // Check each citizen's location
+                      for (const complaint of pendingWithLocation) {
+                        const result = await checkCitizenLocation(complaint.citizenLocation);
+                        
+                        if (!result.canCall) {
+                          restrictedCount++;
+                          restrictedComplaints.push({
+                            complaintId: complaint.complaint_id,
+                            citizenPhone: complaint.citizenPhone,
+                            reason: result.reason,
+                          });
+                        } else {
+                          allowedCount++;
+                        }
+                      }
+                      
+                      setGeofencingStatus({
+                        canCall: restrictedCount === 0,
+                        reason: restrictedCount > 0 
+                          ? `${restrictedCount} citizens in restricted zones - calls will be skipped`
+                          : 'All citizens can be called',
+                        checkedComplaints: pendingWithLocation.length,
+                        restrictedCount,
+                        allowedCount,
+                        restrictedComplaints,
+                        nearbyPlaces: [],
+                      });
                     } catch (err) {
                       setGeofencingStatus({
                         canCall: true,
@@ -454,7 +557,7 @@ export default function SupervisorDashboard() {
                     fontSize: '1rem',
                   }}
                 >
-                  {geofencingLoading ? '🔄 Checking Location...' : '📍 Check My Location'}
+                  {geofencingLoading ? '🔄 Checking Citizens...' : '📍 Check Citizens Location'}
                 </button>
 
                 {geofencingStatus && (
@@ -471,44 +574,45 @@ export default function SupervisorDashboard() {
                       </span>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: '1.1rem', color: geofencingStatus.canCall ? '#2e7d32' : '#c62828' }}>
-                          {geofencingStatus.canCall ? 'Location Verified - Calls Allowed' : 'Restricted Zone - Calls Blocked'}
+                          {geofencingStatus.canCall ? 'All Citizens Can Be Called' : 'Some Citizens in Restricted Zones'}
                         </div>
                         <div style={{ color: '#666', fontSize: '0.9rem' }}>{geofencingStatus.reason}</div>
+                        {geofencingStatus.checkedComplaints !== undefined && (
+                          <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '4px' }}>
+                            Checked: {geofencingStatus.checkedComplaints} complaints | 
+                            Allowed: {geofencingStatus.allowedCount || 0} | 
+                            Restricted: {geofencingStatus.restrictedCount || 0}
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    {geofencingStatus.userLocation && (
+                    {geofencingStatus.restrictedComplaints?.length > 0 && (
                       <div style={{
                         background: 'white',
                         padding: '12px',
                         borderRadius: '6px',
-                        marginBottom: '12px',
+                        marginTop: '12px',
                       }}>
-                        <div style={{ fontSize: '0.75rem', color: '#666', marginBottom: '4px' }}>Coordinates</div>
-                        <div style={{ fontFamily: 'monospace' }}>
-                          {geofencingStatus.userLocation.latitude.toFixed(6)}, {geofencingStatus.userLocation.longitude.toFixed(6)}
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '8px', color: '#c62828' }}>
+                          🚫 Restricted Citizens (calls will be skipped):
                         </div>
-                      </div>
-                    )}
-
-                    {geofencingStatus.nearbyPlaces?.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '8px' }}>
-                          Nearby Places:
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                          {geofencingStatus.nearbyPlaces.map((place, i) => (
-                            <span key={i} style={{
-                              padding: '4px 12px',
-                              background: geofencingStatus.canCall ? '#c8e6c9' : '#ffcdd2',
-                              color: geofencingStatus.canCall ? '#2e7d32' : '#c62828',
-                              borderRadius: '16px',
-                              fontSize: '0.8rem',
-                            }}>
-                              {place.name}
-                            </span>
-                          ))}
-                        </div>
+                        {geofencingStatus.restrictedComplaints.map((c, i) => (
+                          <div key={i} style={{
+                            padding: '8px',
+                            background: '#fff5f5',
+                            borderRadius: '4px',
+                            marginBottom: '6px',
+                            fontSize: '0.85rem',
+                          }}>
+                            <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#3498db' }}>
+                              {c.complaintId}
+                            </div>
+                            <div style={{ color: '#666', marginTop: '2px' }}>
+                              📱 {c.citizenPhone} — {c.reason}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
