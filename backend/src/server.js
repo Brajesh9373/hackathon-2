@@ -37,7 +37,6 @@ app.use('/api', require('./routes/api'));
 app.use('/api/priority', require('../priority_engine/index'));
 app.use('/api/civic', require('./routes/priority')); // Kopargaon Civic Platform integration
 app.use('/api/verification', require('./routes/verification')); // AI Verification
-app.use('/api/moderation', require('./routes/moderation')); // Misinformation Detection
 app.use('/mock', require('./routes/mock'));
 
 // Health check
