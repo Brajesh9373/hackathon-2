@@ -45,6 +45,27 @@ test('builds an outbound VAPI call with structured extraction and a citizen gree
   assert.equal(schema.additionalProperties, false);
 });
 
+test('starts voice intake without revealing the fixed location or promising a sign-off', () => {
+  const payload = buildVoiceIntakePayload({ phone: '8282909044', assistantId: 'assistant-1', phoneNumberId: 'phone-1' });
+  const firstMessage = payload.assistantOverrides.firstMessage;
+
+  assert.match(firstMessage, /what happened/i);
+  assert.match(firstMessage, /where it happened/i);
+  assert.match(firstMessage, /category/i);
+  assert.doesNotMatch(firstMessage, /Sanjivani|Kopargaon|pilot location/i);
+  assert.doesNotMatch(firstMessage, /thank you|after your third|after you are done/i);
+});
+
+test('instructs the caller to confirm Sanjivani when Radar conflicts with the spoken location', () => {
+  const payload = buildVoiceIntakePayload({ phone: '8282909044', assistantId: 'assistant-1', phoneNumberId: 'phone-1' });
+  const prompt = payload.assistantOverrides.model.messages[0].content;
+
+  assert.match(prompt, /do not reveal.*Sanjivani.*before.*location/i);
+  assert.match(prompt, /if the caller.*location other than Sanjivani University/i);
+  assert.match(prompt, /We cannot use any other location because we are currently at Sanjivani University and your real-time location is being fetched using Radar\./i);
+  assert.match(prompt, /ask.*confirm Sanjivani University/i);
+});
+
 test('canonicalizes every voice draft to the fixed Sanjivani pilot location', () => {
   const checked = validateDraft({ complaint_text: 'Open drain', category: 'BLOCKED_DRAIN', address: 'A different street' });
   const canonical = canonicalizeDraftLocation(checked);
