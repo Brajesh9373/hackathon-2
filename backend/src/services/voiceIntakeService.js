@@ -22,7 +22,8 @@ function validateDraft(input = {}) {
 }
 
 function buildVoiceIntakePayload({ phone, assistantId, phoneNumberId, callbackUrl, metadata = {} }) {
-  const firstMessage = buildRoleFirstMessage({ designation: 'Citizen', purpose: 'Please tell me the civic problem, its exact location or landmark, how urgent it is, and whether you have evidence. I will prepare a complaint for your review before anything is submitted.' });
+  const intakePurpose = 'Tell me only three things: what happened, where it happened, and the category. I will prepare a complaint for your review before anything is submitted.';
+  const firstMessage = buildRoleFirstMessage({ designation: 'Citizen', purpose: intakePurpose });
   const payload = {
     assistantId,
     phoneNumberId,
@@ -31,16 +32,17 @@ function buildVoiceIntakePayload({ phone, assistantId, phoneNumberId, callbackUr
     metadata,
     assistantOverrides: {
       firstMessage,
-      model: { provider: process.env.VAPI_MODEL_PROVIDER || 'openai', model: process.env.VAPI_MODEL || 'gpt-4.1', messages: [{ role: 'system', content: buildRoleSystemPrompt({ designation: 'Citizen', purpose: 'Collect a structured civic complaint intake. Ask for the issue, category, exact address or landmark, ward if known, urgency, and whether evidence exists. Do not submit the complaint during the call; return the details for citizen review.' }) }] },
+      model: { provider: process.env.VAPI_MODEL_PROVIDER || 'openai', model: process.env.VAPI_MODEL || 'gpt-4.1', messages: [{ role: 'system', content: buildRoleSystemPrompt({ designation: 'Citizen', purpose: 'Collect only three structured civic complaint fields. Ask exactly for what happened, the location or landmark, and the category. Ask one short question at a time. Do not ask for urgency, ward, evidence, phone number, identity, timing, photos, or any other information. If the caller volunteers extra details, do not add them to structured output. Do not submit the complaint during the call; return only these three fields for citizen review.' }) }] },
       analysisPlan: {
         structuredDataPlan: {
           enabled: true,
           schema: {
             type: 'object',
             properties: {
-              complaint_text: { type: 'string' }, category: { type: 'string', enum: [...CATEGORIES] }, address: { type: 'string' }, ward: { type: 'string' }, urgency: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] }, language: { type: 'string' }, evidence_available: { type: 'boolean' }, confidence: { type: 'number' },
+              complaint_text: { type: 'string', description: 'What happened, in the citizen\'s own words.' }, category: { type: 'string', enum: [...CATEGORIES], description: 'The civic issue category.' }, address: { type: 'string', description: 'The location, address, or landmark.' },
             },
             required: ['complaint_text', 'category', 'address'],
+            additionalProperties: false,
           },
         },
       },

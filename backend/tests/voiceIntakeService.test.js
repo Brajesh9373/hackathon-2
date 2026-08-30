@@ -23,6 +23,22 @@ test('builds an outbound VAPI call with structured extraction and a citizen gree
   assert.equal(payload.assistantOverrides.model.model, 'gpt-4.1');
   assert.equal(payload.assistantOverrides.analysisPlan.structuredDataPlan.enabled, true);
   assert.equal(payload.metadata.callbackUrl, 'https://example.test/callback');
+  const firstMessage = payload.assistantOverrides.firstMessage.toLowerCase();
+  assert.match(firstMessage, /what happened/);
+  assert.match(firstMessage, /where it happened/);
+  assert.match(firstMessage, /category/);
+  assert.doesNotMatch(firstMessage, /urgency|evidence|ward|phone|contact/);
+  const prompt = payload.assistantOverrides.model.messages[0].content.toLowerCase();
+  assert.match(prompt, /what happened/);
+  assert.match(prompt, /location/);
+  assert.match(prompt, /category/);
+  assert.match(prompt, /do not ask for urgency/);
+  assert.match(prompt, /do not ask for urgency, ward, evidence, phone number/);
+  assert.doesNotMatch(prompt, /ask for the issue, category, exact address.*ward if known.*urgency/i);
+  const schema = payload.assistantOverrides.analysisPlan.structuredDataPlan.schema;
+  assert.deepEqual(Object.keys(schema.properties).sort(), ['address', 'category', 'complaint_text']);
+  assert.deepEqual(schema.required.sort(), ['address', 'category', 'complaint_text']);
+  assert.equal(schema.additionalProperties, false);
 });
 
 test('extracts a structured draft from a completed VAPI call response', () => {
