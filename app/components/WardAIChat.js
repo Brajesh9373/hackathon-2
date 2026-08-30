@@ -1,56 +1,58 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { KOPARGAON_WARDS } from '@/data/complaints';
 
-const WARD_INFO = {
-  ward_1: {
-    name: 'Ward 1 - Main Market',
-    nameHi: 'वार्ड 1 - मुख्य बाजार',
-    description: 'Commercial hub with high foot traffic, frequent issues with drainage and garbage.',
-    commonIssues: ['Blocked drains near market', 'Garbage collection delays', 'Street light maintenance'],
+// Cluster information
+const CLUSTER_INFO = {
+  'Sanjivani Area': {
+    name: 'Sanjivani College of Engineering',
+    nameHi: 'संजीवनी इंजिनिअरिंग कॉलेज',
+    description: 'Educational campus area with student population. Common issues include waste management, road conditions, and facility maintenance.',
+    commonIssues: ['Campus waste management', 'Road maintenance', 'Water supply', 'Street lighting'],
+    landmark: true,
+    type: 'college'
   },
-  ward_2: {
-    name: 'Ward 2 - Station Road',
-    nameHi: 'वार्ड 2 - स्टेशन रोड',
-    description: 'Area near railway station with transportation-related complaints.',
-    commonIssues: ['Road damage', 'Drainage near station', 'Street lighting'],
+  'Main Market': {
+    name: 'Main Market',
+    nameHi: 'मुख्य बाजार',
+    description: 'Commercial hub with high foot traffic. Frequent issues with drainage, garbage, and street vendor management.',
+    commonIssues: ['Blocked drains', 'Garbage collection delays', 'Street light maintenance', 'Water stagnation'],
   },
-  ward_3: {
-    name: 'Ward 3 - Temple Area',
-    nameHi: 'वार्ड 3 - मंदिर परिसर',
-    description: 'Religious and tourist area with heritage considerations.',
-    commonIssues: ['Drainage near temple', 'Cleanliness maintenance', 'Water supply'],
+  'Temple Area': {
+    name: 'Temple Area',
+    nameHi: 'श्री साईबाबा मंदिर परिसर',
+    description: 'Religious and tourist area. Needs attention to cleanliness and drainage especially during festival seasons.',
+    commonIssues: ['Drainage near temple', 'Cleanliness maintenance', 'Water supply', 'Festival crowd management'],
   },
-  ward_4: {
-    name: 'Ward 4 - New Layout',
-    nameHi: 'वार्ड 4 - नवीन लेआउट',
-    description: 'Newly developed residential area with infrastructure issues.',
-    commonIssues: ['Road construction damage', 'Incomplete drainage', 'Water connection delays'],
+  'Station Road': {
+    name: 'Station Road',
+    nameHi: 'स्टेशन रोड',
+    description: 'Area near bus stand and transportation hub. Common issues include road damage and drainage.',
+    commonIssues: ['Road damage', 'Drainage near station', 'Street lighting', 'Traffic management'],
   },
-  ward_5: {
-    name: 'Ward 5 - Old Town',
-    nameHi: 'वार्ड 5 - जुना शहर',
-    description: 'Historic old town with aging infrastructure.',
-    commonIssues: ['Sewage overflow', 'Old drainage systems', 'Water supply pressure'],
+  'Government Hospital': {
+    name: 'Government Hospital',
+    nameHi: 'सरकारी रुग्णालय',
+    description: 'Healthcare zone requiring special attention to hygiene and waste management.',
+    commonIssues: ['Medical waste management', 'Drainage near hospital', 'Cleanliness standards', 'Water supply'],
   },
-  ward_6: {
-    name: 'Ward 6 - Hospital Area',
-    nameHi: 'वार्ड 6 - रुग्णालय परिसर',
-    description: 'Healthcare zone requiring special attention to hygiene.',
-    commonIssues: ['Medical waste management', 'Drainage near hospital', 'Cleanliness standards'],
+  'Old Town': {
+    name: 'Old Town',
+    nameHi: 'जुना शहर',
+    description: 'Historic area with aging infrastructure.',
+    commonIssues: ['Sewage overflow', 'Old drainage systems', 'Water supply pressure', 'Road conditions'],
   },
-  ward_7: {
-    name: 'Ward 7 - School Zone',
-    nameHi: 'वार्ड 7 - शाळा क्षेत्र',
-    description: 'Educational area with focus on child safety.',
-    commonIssues: ['Safe routes for children', 'Drainage near schools', 'Street lighting'],
+  'Industrial Area': {
+    name: 'Industrial Area',
+    nameHi: 'औद्योगिक वसाहत',
+    description: 'Industrial zone with factory workers. Issues include waste management and road conditions.',
+    commonIssues: ['Industrial waste', 'Road damage from heavy vehicles', 'Drainage', 'Water supply'],
   },
-  ward_8: {
-    name: 'Ward 8 - Industrial',
-    nameHi: 'वार्ड 8 - औद्योगिक',
-    description: 'Industrial area with specific waste management needs.',
-    commonIssues: ['Industrial waste dumping', 'Drainage for factories', 'Heavy vehicle road damage'],
+  'Kopargaon Area': {
+    name: 'Kopargaon Area',
+    nameHi: 'कोपरगाव परिसर',
+    description: 'General residential area in Kopargaon.',
+    commonIssues: ['General maintenance', 'Road conditions', 'Drainage', 'Water supply'],
   },
 };
 
@@ -100,8 +102,7 @@ export default function WardAIChat({ wardId, wardComplaints, onClose }) {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
   
-  const ward = wardId ? KOPARGAON_WARDS.find(w => w.id === wardId) : null;
-  const wardInfo = wardId ? WARD_INFO[wardId] : null;
+  const wardInfo = wardId ? CLUSTER_INFO[wardId] || CLUSTER_INFO['Kopargaon Area'] : null;
   
   // Calculate stats for this ward
   const stats = wardComplaints?.reduce((acc, c) => {

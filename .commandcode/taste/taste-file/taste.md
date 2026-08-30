@@ -57,7 +57,7 @@
 - Prefers simplified, visually-structured summaries with tables and ASCII diagrams over raw/detailed output. Confidence: 0.85
 - Requests for document analysis ("read and understand") should result in comprehensive extraction first, then simplified presentation with actionable categorization. Confidence: 0.85
 - Strongly prefers validation over feature expansion once the architecture is solid. Wants to stop changing the architecture and move into serious validation/testing before touching anything else. The next phase should be validation, not feature expansion. Confidence: 0.9
-- Prefers implementation-focused responses without directory path references — focuses on what to implement rather than where files are located. Confidence: 0.8
+- Prefers implementation-focused responses without directory path references — focuses on what to implement rather than where files are located. When implementing, uses realistic/production-quality data (Marathi/Hindi for Kopargaon context, no test/abbreviation placeholders). Confidence: 0.85
 - Loads sensitive API credentials from server-side environment variables (`.env`), never from frontend-exposed variables or logs. Prefers `VITE_` prefix only for safe public keys. Confidence: 0.9
 - Only claims external integrations (webhooks, third-party APIs like Make.com) are connected when genuinely tested and working — no bluffing about unverified connections. Confidence: 0.9
 - For libraries that are browser-only or SSR-incompatible (like Leaflet mapping), uses Next.js `dynamic(() => import('../component'), { ssr: false })` pattern with a loading fallback to avoid server-side execution errors. Confidence: 0.85
@@ -75,6 +75,10 @@
 - Prefers location-based call restrictions using geofencing (Radar SDK) to skip automated calls when citizens are in restricted zones (hospital, school, church, mosque, temple, bank, court, government, police station, fire station). Restricted callers are added to manual queue rather than being skipped entirely. Confidence: 0.85
 - For geofencing, uses the citizen's stored location from the complaint record (latitude/longitude from when the complaint was filed), not the supervisor's current location. The supervisor initiates the check but the restricted-zone analysis targets the citizen's location. Confidence: 0.85
 - Uses mock data as fallback when external government APIs aren't available - builds simulated data sources (water quality, transport schedules, food safety, health records) that mirror real database structures for development and testing. Confidence: 0.85
+- Prefers using browser's native Web Speech API for voice interactions (SpeechRecognition + SpeechSynthesis) rather than external voice services - keeps the interface self-contained without external API dependencies. Confidence: 0.85
+- For multilingual civic contexts (Kopargaon), prefers Marathi/Hindi as the primary voice language with bilingual question/answer patterns (native script + English translation). Confidence: 0.85
+- When implementing voice-driven workflows, provides manual fallback UI (e.g., "Skip" button) alongside voice input to handle recognition failures gracefully. Confidence: 0.85
+- Prefers auto-progression in voice interview flows - when voice recognition confidently detects an answer, automatically advances to the next question rather than requiring explicit user confirmation. Confidence: 0.8
 - Prefers human-in-the-loop moderation as part of the verification workflow for fact-checking claims, not fully automated approval/rejection. Human moderators review flagged submissions and make final decisions. Confidence: 0.85
 - Values pattern detection for coordinated fake submissions - systems should identify burst submissions, phone number reuse, duplicate text from different sources, and organized manipulation attempts. Confidence: 0.8
 - When implementing fact-checking systems, creates a mock data layer that includes "known false claims database" with claim text, truth statements, verification sources, and spread counts for pattern matching. Confidence: 0.8
@@ -82,3 +86,6 @@
 - After pulling team changes, expects a comprehensive summary of what was added/modified (new files, features, updates) rather than just a "success" confirmation. Confidence: 0.8
 - After pulling team changes, expects servers to be restarted (both frontend and backend) so the new code changes are reflected. Confidence: 0.85
 - For Next.js 16 development, prefers using default `next dev` (which uses Turbopack) over explicit `--webpack` flag — the webpack mode caused CSS parsing errors that Turbopack resolved. Confidence: 0.85
+- When writing multi-line file content via shell (e.g., heredocs), uses a quoted delimiter like `'ENDOFFILE'` to prevent smart/curly quotes from being inserted by the tool layer — avoids syntax errors from quote character transformation. Confidence: 0.85
+- Prefers minimal UI without visible input variables on the form — wants a simple call button with descriptive text, then post-call verification flow where collected data is shown for review and editing before submission. Confidence: 0.9
+- Prefers leveraging existing external integrations (Vapi, Make.com) for new features rather than building parallel voice/digital systems — wants unified workflows that use the same call infrastructure for complaint registration. Confidence: 0.85

@@ -4,6 +4,16 @@ const { createCaseOfficer } = require('../services/complaintAgent');
 
 const normalizePhone = phone => { const d = String(phone || '').replace(/\D/g, ''); return d.length === 10 ? `+91${d}` : d.startsWith('91') ? `+${d}` : `+${d}`; };
 
+exports.get = async (req, res) => {
+  try {
+    const session = await VoiceIntakeSession.findOne({ _id: req.params.id, citizen_id: req.user._id });
+    if (!session) return res.status(404).json({ error: 'Intake session not found' });
+    res.json({ success: true, session });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.start = async (req, res) => {
   try {
     const safety = req.body?.safety || null;
@@ -35,7 +45,38 @@ exports.confirm = async (req, res) => {
   if (session.status === 'CONFIRMED' && session.draft?.complaint_id) return res.json({ success: true, complaint_id: session.draft.complaint_id });
   const draft = { ...(session.draft || {}), ...(req.body?.edits || {}) };
   if (!draft.complaint_text || !draft.category) return res.status(400).json({ error: 'The voice draft needs an issue and category before confirmation.' });
-  const complaint = await Complaint.create({ complaint_id: `KCP-${Date.now()}`, citizen_id: req.user._id, citizen_name: req.user.name, citizen_mobile: req.user.mobile, complaint_text: draft.complaint_text, category: draft.category, module: draft.module || 'DEVELOPMENT', location: draft.location || {}, source: 'call', status: 'FILED', timeline: [{ event: 'Complaint filed by voice', actor_id: req.user._id, actor_name: req.user.name, actor_role: 'citizen', note: 'Confirmed from NagarSetu voice intake' }] });
-  await createCaseOfficer(complaint, { source: 'voice' }); session.status = 'CONFIRMED'; session.draft = { ...draft, complaint_id: complaint.complaint_id }; await session.save();
+  
+  // Determine module based on category
+  let module = draft.module || 'DEVELOPMENT';
+  if (['GARBAGE', 'WASTE', 'CLEANING'].includes(draft.category)) {
+    module = 'WASTE';
+  }
+  
+  // Determine ward from location
+  const ward = draft.location?.ward || 'Ward 1';
+  const zone = draft.location?.zone || 'Central Zone';
+  
+  const complaint = await Complaint.create({ 
+    complaint_id: `KCP-${Date.now()}`, 
+    citizen_id: req.user._id, 
+    citizen_name: req.user.name, 
+    citizen_mobile: req.user.mobile, 
+    complaint_text: draft.complaint_text, 
+    category: draft.category, 
+    module: module, 
+    location: {
+      address: draft.location?.area || draft.location?.address || 'Kopargaon',
+      ward: ward,
+      zone: zone,
+      pincode: '423601'
+    }, 
+    source: 'call', 
+    status: 'FILED', 
+    timeline: [{ event: 'Complaint filed by voice', actor_id: req.user._id, actor_name: req.user.name, actor_role: 'citizen', note: 'Confirmed from NagarSetu voice intake' }] 
+  });
+  await createCaseOfficer(complaint, { source: 'voice' }); 
+  session.status = 'CONFIRMED'; 
+  session.draft = { ...draft, complaint_id: complaint.complaint_id }; 
+  await session.save();
   res.status(201).json({ success: true, complaint });
 };

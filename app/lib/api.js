@@ -158,7 +158,7 @@ export const complaints = {
 export const agents = {
   forComplaint: (id) => request(`/agents/complaints/${id}`),
 };
-export const voiceIntake = { start: (safety) => request('/voice-intake/start', { method: 'POST', body: JSON.stringify({ safety }) }), result: (id, draft) => request(`/voice-intake/${id}/result`, { method: 'POST', body: JSON.stringify({ draft }) }), confirm: (id, edits) => request(`/voice-intake/${id}/confirm`, { method: 'POST', body: JSON.stringify({ edits }) }) };
+export const voiceIntake = { get: (id) => request(`/voice-intake/${id}`), start: (safety) => request('/voice-intake/start', { method: 'POST', body: JSON.stringify({ safety }) }), result: (id, draft) => request(`/voice-intake/${id}/result`, { method: 'POST', body: JSON.stringify({ draft }) }), confirm: (id, edits) => request(`/voice-intake/${id}/confirm`, { method: 'POST', body: JSON.stringify({ edits }) }) };
 
 // === CIVIC DECISION ENGINE ===
 // Responses are intentionally kept structured here; the UI formats them into
