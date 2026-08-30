@@ -14,6 +14,13 @@ export function proxy(request) {
     return NextResponse.next();
   }
 
+  // Preserve the old bookmark while sending users to the redesigned admin
+  // map instead of the retired dashboard surface.
+  if (url.pathname === '/dashboard/heatmap') {
+    url.pathname = '/admin/heatmap';
+    return NextResponse.redirect(url);
+  }
+
   const isLocalhost = hostname.includes('localhost');
   let subdomain = '';
   
@@ -31,7 +38,7 @@ export function proxy(request) {
 
   // If there is an active subdomain, execute the rewrite flow
   if (subdomain && subdomain !== 'www') {
-    const token = request.cookies.get('vaani_token')?.value;
+    const token = request.cookies.get('nagarsetu_token')?.value;
 
     // If no session exists, rewrite to standard root login page with the subdomain parameter
     if (!token) {

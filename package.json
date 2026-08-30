@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "audit:brand": "node scripts/brand-and-route-audit.mjs"
+    "audit:brand": "node scripts/brand-and-route-audit.mjs",
+    "test:backend": "node --test backend/tests/*.test.js"
   },
   "dependencies": {
     "next": "16.2.9",

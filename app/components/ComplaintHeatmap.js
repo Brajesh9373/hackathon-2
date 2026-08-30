@@ -1,262 +1,162 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import WardAIChat from './WardAIChat';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-// Kopargaon ward coordinates (approximate boundaries)
-const KOPARGAON_WARDS = [
-  { id: 'ward_1', name: 'Ward 1 - Main Market', center: [19.8844, 74.4772], color: '#e74c3c' },
-  { id: 'ward_2', name: 'Ward 2 - Station Road', center: [19.8862, 74.4798], color: '#3498db' },
-  { id: 'ward_3', name: 'Ward 3 - Temple Area', center: [19.8831, 74.4756], color: '#2ecc71' },
-  { id: 'ward_4', name: 'Ward 4 - New Layout', center: [19.8880, 74.4810], color: '#f39c12' },
-  { id: 'ward_5', name: 'Ward 5 - Old Town', center: [19.8820, 74.4740], color: '#9b59b6' },
-  { id: 'ward_6', name: 'Ward 6 - Hospital Area', center: [19.8870, 74.4780], color: '#1abc9c' },
-  { id: 'ward_7', name: 'Ward 7 - School Zone', center: [19.8810, 74.4765], color: '#e67e22' },
-  { id: 'ward_8', name: 'Ward 8 - Industrial', center: [19.8900, 74.4830], color: '#34495e' },
-];
+const KOPARGAON_CENTER = [19.885, 74.478];
+const KOPARGAON_BOUNDS = [[19.875, 74.465], [19.9, 74.495]];
 
-export default function ComplaintHeatmap({ complaints = [], showAIChat = true }) {
-  const mapRef = useRef(null);
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [selectedWard, setSelectedWard] = useState(null);
-  const [showChat, setShowChat] = useState(false);
-  const mapInstanceRef = useRef(null);
+function readCoordinates(complaint) {
+  const source = complaint?.location?.coords || complaint?.location || complaint || {};
+  const latitude = Number(source.lat ?? source.latitude);
+  const longitude = Number(source.lng ?? source.lon ?? source.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < 19.7 || latitude > 20.1 || longitude < 74.2 || longitude > 74.8) return null;
+  return { latitude, longitude };
+}
 
-  const getComplaintsByWard = () => {
-    const counts = {};
-    complaints.forEach(c => {
-      const ward = c.location?.ward || c.ward || 'ward_1';
-      counts[ward] = (counts[ward] || 0) + 1;
-    });
-    return counts;
-  };
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+}
 
-  const getHeatColor = (count, maxCount) => {
-    if (count === 0) return 'rgba(46, 204, 113, 0.3)';
-    const intensity = Math.min(count / Math.max(maxCount, 1), 1);
-    if (intensity < 0.33) return `rgba(241, 196, 15, ${0.3 + intensity * 0.4})`;
-    else if (intensity < 0.66) return `rgba(230, 126, 34, ${0.4 + intensity * 0.3})`;
-    else return `rgba(231, 76, 60, ${0.5 + intensity * 0.3})`;
-  };
+function scoreOf(complaint) {
+  const score = Number(complaint?.priority_score ?? complaint?.priority);
+  return Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0;
+}
 
-  useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+function colorFor(score) {
+  if (score >= 75) return '#c64d43';
+  if (score >= 55) return '#d98332';
+  if (score >= 35) return '#b19a2d';
+  return '#15958f';
+}
 
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    document.head.appendChild(link);
+function statusLabel(status) {
+  return String(status || 'FILED').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, character => character.toUpperCase());
+}
 
+function loadLeaflet() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('Map is browser-only'));
+  if (window.L) return Promise.resolve(window.L);
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-nagarsetu-leaflet]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(window.L), { once: true });
+      existing.addEventListener('error', () => reject(new Error('Map library could not load')), { once: true });
+      return;
+    }
+    const stylesheet = document.createElement('link');
+    stylesheet.rel = 'stylesheet';
+    stylesheet.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    stylesheet.dataset.nagarsetuLeaflet = 'true';
+    document.head.appendChild(stylesheet);
     const script = document.createElement('script');
     script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.onload = () => {
-      const L = window.L;
-      const map = L.map(mapRef.current).setView([19.8850, 74.4780], 14);
-      
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 18,
-      }).addTo(map);
+    script.async = true;
+    script.dataset.nagarsetuLeaflet = 'true';
+    script.onload = () => window.L ? resolve(window.L) : reject(new Error('Map library did not initialise'));
+    script.onerror = () => reject(new Error('Map library could not load'));
+    document.body.appendChild(script);
+  });
+}
 
-      const counts = getComplaintsByWard();
-      const maxCount = Math.max(...Object.values(counts), 1);
+export default function ComplaintHeatmap({ complaints = [] }) {
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const layersRef = useRef(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState('');
+  const [activeId, setActiveId] = useState('');
 
-      KOPARGAON_WARDS.forEach(ward => {
-        const count = counts[ward.id] || 0;
-        const radius = Math.max(100, count * 30 + 150);
-        
-        const circle = L.circle(ward.center, {
-          color: getHeatColor(count, maxCount),
-          fillColor: getHeatColor(count, maxCount),
-          fillOpacity: 0.6,
-          radius: radius,
-          weight: 2,
-        }).addTo(map);
-
-        circle.bindPopup(`
-          <div style="text-align: center; min-width: 150px;">
-            <strong style="font-size: 14px;">${ward.name}</strong>
-            <hr style="margin: 8px 0;">
-            <div style="font-size: 24px; font-weight: bold; color: ${count > 0 ? '#e74c3c' : '#2ecc71'};">
-              ${count}
-            </div>
-            <div style="color: #666; font-size: 12px;">Complaints</div>
-            ${showAIChat ? '<div style="margin-top: 8px; font-size: 11px; color: #3498db;">Click to chat with AI</div>' : ''}
-          </div>
-        `);
-
-        circle.on('click', () => {
-          setSelectedWard(ward.id);
-          if (showAIChat) {
-            setShowChat(true);
-          }
-        });
-      });
-
-      KOPARGAON_WARDS.forEach(ward => {
-        const count = counts[ward.id] || 0;
-        const icon = L.divIcon({
-          html: `
-            <div style="
-              background: white;
-              border: 2px solid ${getHeatColor(count, maxCount)};
-              border-radius: 20px;
-              padding: 4px 10px;
-              font-size: 12px;
-              font-weight: bold;
-              box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-              text-align: center;
-              white-space: nowrap;
-              cursor: pointer;
-            ">
-              <div style="font-size: 16px; font-weight: bold;">${count}</div>
-              <div style="font-size: 10px; color: #666;">${ward.id.replace('ward_', 'W')}</div>
-            </div>
-          `,
-          className: 'ward-label',
-          iconAnchor: [0, 0],
-        });
-        
-        L.marker(ward.center, { icon }).addTo(map);
-      });
-
-      mapInstanceRef.current = map;
-      setMapLoaded(true);
+  const points = useMemo(() => complaints.map((complaint, index) => {
+    const coordinates = readCoordinates(complaint);
+    if (!coordinates) return null;
+    return {
+      id: complaint._id || complaint.complaint_id || `mapped-${index}`,
+      complaint,
+      ...coordinates,
+      score: scoreOf(complaint),
     };
-    document.head.appendChild(script);
+  }).filter(Boolean), [complaints]);
 
+  const clusters = useMemo(() => {
+    const grouped = new Map();
+    points.forEach(point => {
+      const key = `${point.latitude.toFixed(3)},${point.longitude.toFixed(3)}`;
+      const current = grouped.get(key) || { latitude: point.latitude, longitude: point.longitude, count: 0, maxScore: 0 };
+      current.count += 1;
+      current.maxScore = Math.max(current.maxScore, point.score);
+      grouped.set(key, current);
+    });
+    return [...grouped.values()];
+  }, [points]);
+
+  const areas = useMemo(() => {
+    const grouped = new Map();
+    complaints.forEach(complaint => {
+      const label = complaint.location?.ward || complaint.location?.area || complaint.location?.address;
+      if (!label) return;
+      const key = String(label).trim();
+      const current = grouped.get(key) || { label: key, total: 0, open: 0 };
+      current.total += 1;
+      if (!['COMPLETED', 'VERIFIED', 'CLOSED'].includes(String(complaint.status || '').toUpperCase())) current.open += 1;
+      grouped.set(key, current);
+    });
+    return [...grouped.values()].sort((left, right) => right.total - left.total).slice(0, 6);
+  }, [complaints]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadLeaflet().then(L => {
+      if (cancelled || !mapRef.current || mapInstanceRef.current) return;
+      const map = L.map(mapRef.current, { zoomControl: true, attributionControl: true }).setView(KOPARGAON_CENTER, 14);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 18 }).addTo(map);
+      map.setMaxBounds(KOPARGAON_BOUNDS);
+      layersRef.current = L.layerGroup().addTo(map);
+      mapInstanceRef.current = map;
+      setMapReady(true);
+      window.setTimeout(() => map.invalidateSize(), 80);
+    }).catch(error => { if (!cancelled) setMapError(error.message || 'Map could not be loaded.'); });
     return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
+      cancelled = true;
+      if (mapInstanceRef.current) mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+      layersRef.current = null;
     };
   }, []);
 
-  const wardComplaints = selectedWard 
-    ? complaints.filter(c => (c.location?.ward || c.ward) === selectedWard)
-    : [];
+  useEffect(() => {
+    if (!mapReady || !mapInstanceRef.current || !layersRef.current || !window.L) return;
+    const L = window.L;
+    layersRef.current.clearLayers();
+    clusters.forEach(cluster => {
+      const color = colorFor(cluster.maxScore);
+      const area = L.circle([cluster.latitude, cluster.longitude], { radius: Math.min(260, 90 + cluster.count * 34), color, fillColor: color, fillOpacity: .16, weight: 2 });
+      area.bindTooltip(`${cluster.count} mapped ${cluster.count === 1 ? 'complaint' : 'complaints'}`, { direction: 'top', opacity: .9 });
+      area.addTo(layersRef.current);
+    });
+    points.forEach(point => {
+      const complaint = point.complaint;
+      const marker = L.circleMarker([point.latitude, point.longitude], { radius: 7, color: '#fff', weight: 2, fillColor: colorFor(point.score), fillOpacity: 1 });
+      marker.bindPopup(`<strong>${escapeHtml(complaint.complaint_id || 'Complaint')}</strong><br>${escapeHtml(complaint.complaint_text || 'Civic issue')}<br><small>${escapeHtml(statusLabel(complaint.status))}</small>`);
+      marker.on('click', () => setActiveId(String(point.id)));
+      marker.addTo(layersRef.current);
+    });
+    if (points.length > 1) mapInstanceRef.current.fitBounds(L.latLngBounds(points.map(point => [point.latitude, point.longitude])), { padding: [24, 24], maxZoom: 15 });
+  }, [clusters, mapReady, points]);
 
-  const selectedWardInfo = KOPARGAON_WARDS.find(w => w.id === selectedWard);
+  const focus = point => {
+    setActiveId(String(point.id));
+    if (!mapInstanceRef.current) return;
+    mapInstanceRef.current.setView([point.latitude, point.longitude], 16, { animate: true });
+  };
+  const unmapped = complaints.length - points.length;
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', position: 'relative' }}>
-      {/* Map Container */}
-      <div style={{ 
-        borderRadius: '12px', 
-        overflow: 'hidden',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        position: 'relative'
-      }}>
-        <div 
-          ref={mapRef} 
-          style={{ 
-            height: '450px', 
-            width: '100%',
-            background: '#e8e8e8'
-          }} 
-        />
-        
-        {/* Legend */}
-        <div style={{
-          position: 'absolute',
-          bottom: '16px',
-          left: '16px',
-          background: 'white',
-          padding: '12px',
-          borderRadius: '8px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-          fontSize: '12px',
-          zIndex: 1000
-        }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>Click any ward to chat with AI</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <div style={{ width: '20px', height: '20px', background: 'rgba(46, 204, 113, 0.4)', borderRadius: '4px' }} />
-            <span>Low / None</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <div style={{ width: '20px', height: '20px', background: 'rgba(241, 196, 15, 0.6)', borderRadius: '4px' }} />
-            <span>Medium</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <div style={{ width: '20px', height: '20px', background: 'rgba(230, 126, 34, 0.7)', borderRadius: '4px' }} />
-            <span>High</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '20px', height: '20px', background: 'rgba(231, 76, 60, 0.8)', borderRadius: '4px' }} />
-            <span>Critical</span>
-          </div>
-        </div>
-
-        {/* Instruction */}
-        {showAIChat && (
-          <div style={{
-            position: 'absolute',
-            top: '16px',
-            right: '16px',
-            background: 'rgba(255, 153, 51, 0.95)',
-            color: 'white',
-            padding: '8px 16px',
-            borderRadius: '8px',
-            fontSize: '12px',
-            fontWeight: 600,
-            zIndex: 1000,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-          }}>
-            🤖 Click a ward to chat with AI
-          </div>
-        )}
-      </div>
-
-      {/* Ward Summary Cards */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-        gap: '12px'
-      }}>
-        {KOPARGAON_WARDS.map(ward => {
-          const count = getComplaintsByWard()[ward.id] || 0;
-          const pending = complaints.filter(c => (c.location?.ward || c.ward) === ward.id && ['FILED', 'ASSIGNED', 'IN_PROGRESS'].includes(c.status)).length;
-          return (
-            <div 
-              key={ward.id}
-              onClick={() => { setSelectedWard(ward.id); setShowChat(true); }}
-              style={{
-                padding: '16px',
-                background: 'white',
-                borderRadius: '12px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                cursor: 'pointer',
-                borderLeft: `4px solid ${getHeatColor(count, Math.max(...Object.values(getComplaintsByWard()), 1))}`,
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#666' }}>{ward.id.replace('ward_', 'Ward ')}</span>
-                <span style={{ fontSize: '14px' }}>🤖</span>
-              </div>
-              <div style={{ fontSize: '28px', fontWeight: 'bold', color: count > 0 ? '#e74c3c' : '#2ecc71' }}>{count}</div>
-              <div style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>Total Complaints</div>
-              {pending > 0 && (
-                <div style={{ marginTop: '8px', fontSize: '10px', color: '#f39c12' }}>
-                  ⏳ {pending} pending
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* AI Chat Modal */}
-      {showChat && selectedWard && showAIChat && (
-        <WardAIChat 
-          wardId={selectedWard}
-          wardComplaints={wardComplaints}
-          onClose={() => { setShowChat(false); setSelectedWard(null); }}
-        />
-      )}
-    </div>
-  );
+  return <section className="v-heatmap" aria-label="Live complaint heat map">
+    <div className="v-heatmap-head"><div><span className="v-eyebrow">NETWORK MAP</span><h2>Complaint density</h2><p>Only records with real coordinates are plotted. Nothing is invented when the register is empty.</p></div><span className="v-map-count"><strong>{points.length}</strong> mapped / {complaints.length} total</span></div>
+    <div className="v-heatmap-canvas"><div ref={mapRef} className="v-heatmap-map" aria-label="OpenStreetMap showing complaint density" />{!mapReady && !mapError && <div className="v-map-overlay">Preparing the live map</div>}{mapError && <div className="v-map-overlay is-error">{mapError}</div>}</div>
+    <div className="v-heatmap-meta"><div className="v-map-legend"><span><i className="dot-teal" />Low priority</span><span><i className="dot-amber" />Medium priority</span><span><i className="dot-coral" />High priority</span></div>{unmapped > 0 && <span className="v-map-unmapped">{unmapped} record{unmapped === 1 ? '' : 's'} without coordinates</span>}</div>
+    {areas.length > 0 && <div className="v-map-areas">{areas.map(area => <div className="v-map-area" key={area.label}><span>{area.label}</span><strong>{area.total}</strong><small>{area.open} open</small></div>)}</div>}
+    {!complaints.length && <div className="v-map-empty-copy"><strong>No complaint signal yet</strong><span>New citizen submissions will appear here after they include a map location.</span></div>}
+    {points.length > 0 && <div className="v-map-records">{points.slice(0, 5).map(point => <button type="button" key={point.id} className={`v-map-record ${String(activeId) === String(point.id) ? 'is-active' : ''}`} onClick={() => focus(point)}><span><strong>{point.complaint.complaint_id || 'Complaint'}</strong><small>{point.complaint.location?.address || point.complaint.location?.ward || 'Mapped location'}</small></span><b style={{ color: colorFor(point.score) }}>{point.score || 0}</b></button>)}</div>}
+  </section>;
 }

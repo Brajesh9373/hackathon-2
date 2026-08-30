@@ -1,0 +1,2 @@
+const express = require('express'); const auth = require('../middleware/auth'); const authorize = require('../middleware/rbac'); const c = require('../controllers/truthController'); const router = express.Router();
+router.use(auth); router.post('/assess', c.assess); router.post('/cluster', c.cluster); router.get('/queue', authorize('admin'), c.queue); router.patch('/cases/:id', authorize('admin'), c.resolve); module.exports = router;

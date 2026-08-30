@@ -6,6 +6,9 @@ const Complaint = require('../models/Complaint');
 const fs = require('fs');
 const path = require('path');
 const { processVerificationResult } = require('./complaintController');
+const { startRoleCall } = require('../services/callOrchestrationService');
+const { recordCaseEvent } = require('../services/complaintAgent');
+const { appendLedgerEvent } = require('../services/recoveryLedgerService');
 
 // Verification state file
 const VERIFICATION_FILE = path.join(__dirname, '../../../.civic-verification.json');
@@ -168,13 +171,17 @@ exports.startVerification = async (req, res) => {
     }
     
     // Try Make webhook first if configured
+    const callbackBase = `${process.env.PUBLIC_CALLBACK_URL || 'http://localhost:8791'}/api/verification/result`;
+    const callbackUrl = process.env.CIVIC_CALLBACK_TOKEN
+      ? `${callbackBase}?token=${encodeURIComponent(process.env.CIVIC_CALLBACK_TOKEN)}`
+      : callbackBase;
     const makeResult = await notifyMakeWebhook(complaintId, {
       phone,
       title,
       location,
       completionNotes,
       evidence,
-      callbackUrl: `${process.env.PUBLIC_CALLBACK_URL || 'http://localhost:8791'}/api/verification/result`
+      callbackUrl
     });
     
     if (makeResult && makeResult.callId) {
@@ -195,31 +202,15 @@ exports.startVerification = async (req, res) => {
       return res.status(500).json({ error: 'Vapi not configured' });
     }
     
-    // Build first message
-    const firstMessage = `Hello, this is Kopargaon Municipal Council calling about the complaint ${title || 'report'} at ${location || 'your location'}. Our field worker has marked the work done. Has the issue been fully completed and resolved? Please answer yes or no.`;
-    
-    const vapiResponse = await fetch('https://api.vapi.ai/call', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${vapiToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        assistantId: VAPI_ASSISTANT_ID,
-        type: 'outboundPhoneCall',
-        phoneNumberId: VAPI_PHONE_NUMBER_ID,
-        customer: {
-          number: phone
-        },
-        assistantOverrides: {
-          firstMessage
-        }
-      })
-    });
-    
-    if (!vapiResponse.ok) {
-      const error = await vapiResponse.text();
-      console.error('Vapi error:', error);
+    const roleCall = await startRoleCall({ designation: 'Citizen', recipient: phone, context: `We are calling about complaint ${title || 'report'} at ${location || 'your location'}. Our field worker marked the work done. Ask the citizen clearly whether the issue is fully completed and resolved. Only an explicit yes may close the complaint.`, firstMessage: `Hello Citizen. This is NagarSetu calling about the ${title || 'civic issue'} at ${location || 'your location'}. The field team marked it done. Is the issue fully fixed? Please answer yes or no.`, geofence, callbackUrl, metadata: { complaintId, purpose: 'resolution_verification' } });
+    if (roleCall.status === 'BLOCKED') {
+      complaint.verification.status = 'pending';
+      complaint.verification.evidence = `Automated call held: ${roleCall.reason}`;
+      await complaint.save();
+      return res.status(202).json({ ok: true, provider: 'blocked', callId: null, blocked: true, reason: roleCall.reason });
+    }
+    if (!roleCall.callId) {
+      const error = roleCall.raw || 'Provider did not return a call id';
       
       // A failed call must never look like a confirmed resolution. Keep the
       // record in the verification queue so it can be retried or handled
@@ -234,21 +225,20 @@ exports.startVerification = async (req, res) => {
       
       return res.status(500).json({ error: 'Failed to initiate call', details: error });
     }
-    
-    const callData = await vapiResponse.json();
-    
     // Update state with call ID
-    state[complaintId].callId = callData.id;
+    state[complaintId].callId = roleCall.callId;
     saveVerificationState(state);
     
     // Update complaint
-    complaint.verification.call_id = callData.id;
+    complaint.verification.call_id = roleCall.callId;
     await complaint.save();
+    await recordCaseEvent(complaint._id, { type: 'VERIFICATION_CALL_STARTED', summary: 'NagarSetu started the citizen verification call', next_action: 'Wait for an explicit citizen yes or no', actor: req.user.name || req.user.role }).catch(() => null);
+    appendLedgerEvent({ aggregateType: 'Complaint', aggregateId: complaint._id, eventType: 'VERIFICATION_CALL_STARTED', actor: req.user.name || req.user.role, payload: { complaint_id: complaint.complaint_id, call_id: roleCall.callId, status: 'calling' } });
     
     return res.status(202).json({
       ok: true,
       provider: 'vapi',
-      callId: callData.id
+      callId: roleCall.callId
     });
     
   } catch (error) {
@@ -305,23 +295,24 @@ exports.getVerification = async (req, res) => {
           console.log('Vapi response:', callData.status, callData.endedReason);
           
           // Check if call is completed (Vapi returns 'ended' with endedReason)
-          if ((callData.status === 'ended' || callData.status === 'completed') && callData.endedReason) {
-            console.log('Processing call completion, transcript:', (callData.transcript || '').substring(0, 200));
+          if (callData.status === 'ended' || callData.status === 'completed') {
+            const transcript = callData.artifact?.transcript || callData.transcript || '';
+            console.log('Processing call completion, transcript:', transcript.substring(0, 200));
             // Use the same classifier and state transition as the external
             // Make callback so polling cannot disagree with webhook results.
             const decision = await processVerificationResult(complaintId, {
-              decision: classifyAnswer(callData.transcript || ''),
-              transcript: callData.transcript || ''
+              decision: classifyAnswer(transcript),
+              transcript
             });
             saved.status = decision;
             saved.completedAt = new Date().toISOString();
-            saved.transcript = callData.transcript;
+            saved.transcript = transcript;
             saveVerificationState(state);
             
             return res.json({
               decision,
               callId: saved.callId,
-              transcript: callData.transcript
+              transcript
             });
           }
         }
@@ -346,24 +337,34 @@ exports.getVerification = async (req, res) => {
 // Callback endpoint for external verification (Make, etc.)
 exports.receiveResult = async (req, res) => {
   try {
-    const token = req.headers['x-civic-callback-token'];
+    const token = req.headers['x-civic-callback-token'] || req.query.token;
     const expectedToken = process.env.CIVIC_CALLBACK_TOKEN;
     
     if (expectedToken && token !== expectedToken) {
       return res.status(401).json({ error: 'Invalid token' });
     }
     
-    const { complaintId, decision, transcript } = req.body;
-    
-    if (!complaintId || !decision) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    // Make and VAPI send an end-of-call report envelope, while local tests
+    // and the Make webhook may send the already-normalized fields. Accept
+    // both shapes and resolve the complaint from the call metadata when the
+    // webhook does not repeat the human-readable complaint id.
+    const body = req.body || {};
+    const message = body.message || {};
+    const call = body.call || message.call || {};
+    const metadata = body.metadata || call.metadata || message.metadata || {};
+    const callId = body.callId || body.call_id || call.id || message.callId || message.call?.id;
+    let complaintId = body.complaintId || body.complaint_id || metadata.complaintId || metadata.complaint_id;
+    const transcript = body.transcript || message.artifact?.transcript || body.artifact?.transcript || call.artifact?.transcript || message.transcript || '';
+    let decision = body.decision;
+    if (!complaintId && callId) {
+      const byCall = await Complaint.findOne({ 'verification.call_id': callId }).select('complaint_id').lean();
+      complaintId = byCall?.complaint_id;
     }
-    
-    if (!['confirmed', 'unresolved'].includes(decision)) {
-      return res.status(400).json({ error: 'Invalid decision' });
-    }
-    
-    const resolvedDecision = await processVerificationResult(complaintId, { decision, transcript: transcript || '' });
+    if (!complaintId) return res.status(400).json({ error: 'Missing complaint id or call metadata' });
+    if (!decision) decision = classifyAnswer(transcript);
+    if (!['confirmed', 'unresolved'].includes(decision)) return res.status(400).json({ error: 'Invalid decision' });
+
+    const resolvedDecision = await processVerificationResult(complaintId, { decision, transcript, id: callId });
     const state = loadVerificationState();
     if (state[complaintId]) {
       state[complaintId].status = resolvedDecision;

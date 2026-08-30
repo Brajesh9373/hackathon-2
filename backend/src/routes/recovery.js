@@ -1,3 +1,4 @@
-const express = require('express'); const auth = require('../middleware/auth'); const authorize = require('../middleware/rbac'); const { verifyLedger } = require('../services/recoveryLedgerService'); const router = express.Router();
-router.get('/status', auth, authorize('admin'), (req, res) => res.json({ success: true, ledger: verifyLedger(), mode: 'operational' }));
+const express = require('express'); const auth = require('../middleware/auth'); const authorize = require('../middleware/rbac'); const { verifyLedger, readEvents } = require('../services/recoveryLedgerService'); const { restorePrimaryStore } = require('../services/recoveryReplayService'); const router = express.Router();
+router.get('/status', auth, authorize('admin'), (req, res) => { const events = readEvents(); res.json({ success: true, ledger: verifyLedger(), mode: 'operational', lastEvent: events.at(-1)?.eventType || null, pendingCommands: events.filter(event => event.eventType === 'PENDING_COMMAND').length }); });
+router.post('/restore', auth, authorize('admin'), async (req, res) => { try { res.json({ success: true, ...(await restorePrimaryStore({ aggregateIds: req.body?.aggregateIds || [] })) }); } catch (error) { res.status(409).json({ error: error.message }); } });
 module.exports = router;

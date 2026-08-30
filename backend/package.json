@@ -1,7 +1,7 @@
 {
-  "name": "vaani-backend",
+  "name": "nagarsetu-backend",
   "version": "1.0.0",
-  "description": "VAANI — Vigilant Administration & Accountability Network Intelligence Backend",
+  "description": "NagarSetu civic operations backend",
   "main": "src/server.js",
   "scripts": {
     "dev": "node --watch src/server.js",

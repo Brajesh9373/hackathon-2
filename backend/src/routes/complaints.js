@@ -37,6 +37,9 @@ router.post('/:id/follow-up', c.requestFollowUp);
 
 // Admin only
 router.get('/admin/users', c.getSupervisors);
+router.post('/admin/users', c.createTeamMember);
+router.patch('/admin/users/:id', c.updateTeamMember);
+router.delete('/admin/users/:id', c.removeTeamMember);
 router.get('/admin/stats', c.dashboardStats);
 
 // Detail (keep this after all named collection routes so paths such as

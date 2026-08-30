@@ -73,7 +73,7 @@ export function PriorityPill({ value }) {
     : inferred.includes('orange') || inferred === 'high' ? 'warm'
       : inferred.includes('yellow') || inferred === 'medium' ? 'cool' : 'quiet';
   const label = inferred.includes('defcon') ? inferred.replace('defcon ', '') : inferred || 'minimal';
-  return <span className={`v-priority v-priority-${tone}`}>{String(label).replace(/^./, char => char.toUpperCase())}{Number.isFinite(numeric) ? ` · ${numeric}` : ''}</span>;
+  return <span className={`v-priority v-priority-${tone}`}>{String(label).replace(/^./, char => char.toUpperCase())}{Number.isFinite(numeric) ? ` / ${numeric}` : ''}</span>;
 }
 
 export function StatCard({ label, value, detail, tone = 'neutral' }) {
@@ -84,8 +84,8 @@ export function SectionHeading({ eyebrow, title, detail, action }) {
   return <div className="v-section-heading"><div><span className="v-eyebrow">{eyebrow}</span><h2>{title}</h2>{detail && <p>{detail}</p>}</div>{action}</div>;
 }
 
-export function EmptyState({ title, detail, action, icon = '·' }) {
-  return <section className="v-empty"><div className="v-empty-icon">{icon}</div><div><h3>{title}</h3>{detail && <p>{detail}</p>}{action}</div></section>;
+export function EmptyState({ title, detail, action, icon = '' }) {
+  return <section className="v-empty">{icon && <div className="v-empty-icon">{icon}</div>}<div><h3>{title}</h3>{detail && <p>{detail}</p>}{action}</div></section>;
 }
 
 export function initials(name = 'User') {
@@ -100,8 +100,8 @@ export function ComplaintCard({ complaint, onOpen, showAction = true }) {
   return <article className="v-complaint-card">
     <div className="v-card-topline"><span className="v-reference">{complaint.complaint_id || complaint.id || 'NagarSetu'}</span><PriorityPill value={complaint.priority_score ?? complaint.priority} /></div>
     <button className="v-card-main" onClick={onOpen} aria-label={`Open complaint ${complaint.complaint_id || complaint.id}`}>
-      <div><h3>{complaint.complaint_text || complaint.description || 'Civic issue'}</h3><p><span className="v-pin">⌖</span>{complaintLocation(complaint)}</p></div>
-      <span className="v-arrow">↗</span>
+      <div><h3>{complaint.complaint_text || complaint.description || 'Civic issue'}</h3><p>{complaintLocation(complaint)}</p></div>
+      <span className="v-arrow">Open</span>
     </button>
     <div className="v-card-footer"><StatusPill value={complaint.status} /><span>{formatRelative(complaint.createdAt || complaint.submittedAt)}</span>{showAction && <span className="v-card-link">View record</span>}</div>
   </article>;
@@ -117,5 +117,5 @@ export function ProgressRail({ status }) {
   ];
   const order = { FILED: 0, PENDING_ASSIGN: 0, ASSIGNED: 1, IN_PROGRESS: 2, AWAITING_VERIFICATION: 3, PENDING_CLOSURE: 3, PROVISIONALLY_CLOSED: 3, DEPT_VERIFIED: 3, DM_VERIFIED: 3, COMPLETED: 4, VERIFIED: 4, RESOLVED: 4, CLOSED: 4, REOPENED: 2, DISPUTED: 2, ESCALATED: 1, DEFCON_ALERT: 0 };
   const current = order[String(status || 'FILED').toUpperCase()] ?? 0;
-  return <ol className="v-progress">{stages.map(([key, label], index) => <li className={index <= current ? 'is-done' : ''} key={key}><span>{index < current ? '✓' : String(index + 1).padStart(2, '0')}</span><small>{label}</small></li>)}</ol>;
+  return <ol className="v-progress">{stages.map(([key, label], index) => <li className={index <= current ? 'is-done' : ''} key={key}><span>{String(index + 1).padStart(2, '0')}</span><small>{label}</small></li>)}</ol>;
 }

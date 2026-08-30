@@ -31,7 +31,7 @@ export function middleware(request) {
 
   // If there is an active subdomain, execute the rewrite flow
   if (subdomain && subdomain !== 'www') {
-    const token = request.cookies.get('vaani_token')?.value;
+    const token = request.cookies.get('nagarsetu_token')?.value;
 
     // If no session exists, rewrite to standard root login page with the subdomain parameter
     if (!token) {

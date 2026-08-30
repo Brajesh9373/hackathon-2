@@ -2,8 +2,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { sendOTP } = require('../services/sms');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'vaani-jwt-secret-change-in-production';
-const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET || 'vaani-refresh-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'nagarsetu-jwt-secret-change-in-production';
+const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET || 'nagarsetu-refresh-secret-change-in-production';
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
 // The frontend exposes four plain-language workspaces. Keep the seeded backend
@@ -163,8 +163,7 @@ exports.logout = async (req, res) => {
 exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
-      .select('-otp -otp_expires -refresh_token')
-      .populate('department', 'name code');
+      .select('-otp -otp_expires -refresh_token');
     res.json({ user });
   } catch (err) {
     res.status(500).json({ error: 'Failed to get user' });
@@ -179,8 +178,7 @@ exports.updateMe = async (req, res) => {
     if (language_preference) updates.language_preference = language_preference;
 
     const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true })
-      .select('-otp -otp_expires -refresh_token')
-      .populate('department', 'name code');
+      .select('-otp -otp_expires -refresh_token');
 
     res.json({
       success: true,

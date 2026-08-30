@@ -9,7 +9,7 @@ const auth = async (req, res, next) => {
     }
 
     const token = header.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'vaani-jwt-secret-change-in-production');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'nagarsetu-jwt-secret-change-in-production');
 
     const user = await User.findById(decoded.id).select('-otp -otp_expires -refresh_token');
     if (!user || !user.is_active) {

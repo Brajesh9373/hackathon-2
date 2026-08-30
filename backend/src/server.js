@@ -1,5 +1,5 @@
 /**
- * VAANI Backend Server
+ * NagarSetu Backend Server
  * Vigilant Administration & Accountability Network Intelligence
  */
 require('dotenv').config();
@@ -34,12 +34,14 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/complaints', require('./routes/complaints'));
 app.use('/api/agents', require('./routes/agents'));
+app.use('/api/case-officer', require('./routes/caseOfficer'));
 app.use('/api', require('./routes/api'));
 app.use('/api/priority', require('../priority_engine/index'));
 app.use('/api/civic', require('./routes/priority')); // Kopargaon Civic Platform integration
 app.use('/api/verification', require('./routes/verification')); // AI Verification
 app.use('/api/voice-intake', require('./routes/voiceIntake'));
 app.use('/api/recovery', require('./routes/recovery'));
+app.use('/api/truth', require('./routes/truth'));
 app.use('/mock', require('./routes/mock'));
 
 // Health check
@@ -81,12 +83,14 @@ connectDB().then(() => {
     // Schedule Cron Jobs
     const { checkSLABreaches } = require('./jobs/sla-check');
     const { checkSpeedAnomaly, checkAfterHoursClosure, checkCopyPasteSpeakingOrders, checkRecurrence } = require('./jobs/anti-gaming');
+    const { runCaseOfficerSweep } = require('./services/caseOfficerService');
 
     // Every 30 minutes: SLA breach check + speed anomaly
     cron.schedule('*/30 * * * *', async () => {
       try {
         await checkSLABreaches();
         await checkSpeedAnomaly();
+        await runCaseOfficerSweep();
       } catch (err) { console.error('Cron error (30min):', err.message); }
     });
 

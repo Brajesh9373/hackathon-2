@@ -1,0 +1,1 @@
+const express = require('express'); const auth = require('../middleware/auth'); const c = require('../controllers/caseOfficerController'); const router = express.Router(); router.use(auth); router.get('/complaints/:id', c.get); router.post('/complaints/:id/proposals', c.propose); router.post('/:id/approve', c.approve); module.exports = router;

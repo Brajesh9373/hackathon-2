@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema({
   mobile: { type: String, required: true, unique: true },
   email: String,
   
-  // Kopargaon roles - simplified from VAANI
+  // NagarSetu roles for the Kopargaon civic workflow
   role: {
     type: String,
     required: true,

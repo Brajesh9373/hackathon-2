@@ -1,13 +1,14 @@
 /**
  * Kopargaon Civic Platform - Database Seed Script
- * Creates: admin, supervisors, workers, citizens, and sample complaints
+ * Creates: admin, supervisors, workers, and citizens.
+ * Sample complaints are opt-in with SEED_SAMPLE_DATA=true.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
 const mongoose = require('mongoose');
 const User = require('../../models/User');
 const Complaint = require('../../models/Complaint');
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/vaani';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/nagarsetu';
 
 // Kopargaon-specific complaint data with Marathi/Hindi text
 const complaintData = {
@@ -150,7 +151,7 @@ async function seed() {
         worker_profile: {
           employee_id: `KCP-W${String(i * 2 + 1).padStart(3, '0')}`,
           designation: 'फील्ड वर्कर - Field Worker',
-          active_tasks: Math.floor(Math.random() * 5),
+          active_tasks: 0,
           max_capacity: 8,
           is_available: true,
           status: 'AVAILABLE'
@@ -166,8 +167,8 @@ async function seed() {
           designation: 'फील्ड वर्कर - Field Worker',
           active_tasks: Math.floor(Math.random() * 5),
           max_capacity: 8,
-          is_available: Math.random() > 0.3,
-          status: Math.random() > 0.3 ? 'AVAILABLE' : 'ON_TASK'
+          is_available: true,
+          status: 'AVAILABLE'
         }
       }
     ]);
@@ -187,7 +188,10 @@ async function seed() {
   }
   console.log('Citizens Created:', citizens.length);
 
-  // 5. Create Sample Complaints
+  // 5. Create sample complaints only when explicitly requested. The default
+  // seed leaves the register empty so demo KPIs start at zero and every
+  // complaint shown in the product is real user input.
+  if (process.env.SEED_SAMPLE_DATA === 'true') {
   const complaints = [];
   
   for (let i = 0; i < 40; i++) {
@@ -322,6 +326,9 @@ async function seed() {
   
   await Complaint.insertMany(complaints);
   console.log('Complaints Created:', complaints.length);
+  } else {
+    console.log('Complaints Created: 0 (set SEED_SAMPLE_DATA=true to load fixtures)');
+  }
 
   console.log('\n===========================================');
   console.log('कोपरगाव नागरी सेवा प्लॅटफॉर्म - Database Seeded!');

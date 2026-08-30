@@ -5,6 +5,9 @@ const { calculatePriority, getPriorityLabel, getModuleFromCategory } = require('
 const { evaluateComplaint } = require('../services/priorityIntegration');
 const { createCaseOfficer, recordCaseEvent } = require('../services/complaintAgent');
 const { appendLedgerEvent } = require('../services/recoveryLedgerService');
+const { assessIntegrity, fingerprintClaim } = require('../services/misinformationService');
+const { startRoleCall } = require('../services/callOrchestrationService');
+const FactCheckCase = require('../models/FactCheckCase');
 
 function savePriorityResult(complaint, result) {
   const priority = result?.priority || {};
@@ -57,6 +60,9 @@ exports.fileComplaint = async (req, res) => {
     if (!complaint_text || !category) {
       return res.status(400).json({ error: 'Complaint text and category are required' });
     }
+
+    const allowedSources = new Set(['web', 'mobile', 'whatsapp', 'call']);
+    const complaintSource = allowedSources.has(source) ? source : 'web';
     
     // Determine module (DEVELOPMENT or WASTE)
     const complaintModule = getModuleFromCategory(category);
@@ -74,18 +80,31 @@ exports.fileComplaint = async (req, res) => {
       module: complaintModule,
       impact_factors: impact_factors || {},
       status: 'FILED',
-      source: source || 'web',
+      source: complaintSource,
       timeline: [{
         event: 'Complaint filed',
         actor_id: req.user._id,
         actor_name: req.user.name,
         actor_role: 'citizen',
-        note: `Filed via ${source || 'web'}`,
+        note: `Filed via ${complaintSource}`,
         timestamp: new Date()
       }]
     };
     
+    const matching = await Complaint.find({
+      'integrity_assessment.fingerprint': fingerprintClaim(complaintData.complaint_text),
+      createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) },
+    }).select('citizen_id').lean();
+    const integrity = assessIntegrity({
+      text: complaintData.complaint_text,
+      matchingRecentClaims: matching.length,
+      uniqueCitizens: new Set(matching.map(item => String(item.citizen_id))).size,
+      minutes: 15,
+      isPublicSafety: ['FLOODING', 'BLOCKED_SEWAGE', 'ELECTRICITY'].includes(complaintData.category),
+    });
     const complaint = await Complaint.create(complaintData);
+    complaint.integrity_assessment = { status: integrity.status, confidence: integrity.confidence, fingerprint: integrity.fingerprint, signals: integrity.signals, routing_allowed: integrity.routingAllowed, amplification_allowed: integrity.amplificationAllowed, assessed_at: new Date() };
+    if (integrity.status === 'REVIEW_REQUIRED') await FactCheckCase.create({ complaint_id: complaint._id, claim: complaint.complaint_text, status: 'PENDING', signals: integrity.signals });
     
     // Use the same civic decision engine that powers supervisor explanations,
     // so the persisted score and queue ordering cannot drift apart. Keep the
@@ -105,7 +124,7 @@ exports.fileComplaint = async (req, res) => {
     complaint.sla_deadline = new Date(Date.now() + 48 * 60 * 60 * 1000);
     
     await complaint.save();
-    appendLedgerEvent({ aggregateType: 'Complaint', aggregateId: complaint._id, eventType: 'COMPLAINT_FILED', actor: req.user.name || 'citizen', payload: { complaint_id: complaint.complaint_id, complaint_text, category, location: location || {}, priority_score: complaint.priority_score } });
+    appendLedgerEvent({ aggregateType: 'Complaint', aggregateId: complaint._id, eventType: 'COMPLAINT_FILED', actor: req.user.name || 'citizen', payload: complaint.toObject() });
     await createCaseOfficer(complaint, { actor: req.user.name || 'citizen' }).catch(error => console.error('Case officer creation failed:', error.message));
     
     res.status(201).json({
@@ -241,7 +260,7 @@ exports.assignToSupervisor = async (req, res) => {
     }
     
     const supervisor = await User.findById(supervisorId);
-    if (!supervisor || supervisor.role !== 'supervisor') {
+    if (!supervisor || supervisor.role !== 'supervisor' || supervisor.is_active === false) {
       return res.status(400).json({ error: 'Invalid supervisor' });
     }
     
@@ -263,6 +282,7 @@ exports.assignToSupervisor = async (req, res) => {
     
     await complaint.save();
     await recordCaseEvent(complaint._id, { type: 'SUPERVISOR_ASSIGNED', summary: `Routed to ${supervisor.name}`, next_action: 'Supervisor should assign a field worker', actor: req.user.name || 'admin', metadata: { supervisor_id: supervisor._id } }).catch(() => null);
+    appendLedgerEvent({ aggregateType: 'Complaint', aggregateId: complaint._id, eventType: 'SUPERVISOR_ASSIGNED', actor: req.user.name || 'admin', payload: { complaint_id: complaint.complaint_id, status: complaint.status, assigned_supervisor_id: supervisor._id, assigned_supervisor_name: supervisor.name, assigned_at: complaint.assigned_at } });
     
     res.json({ success: true, complaint });
   } catch (err) {
@@ -320,7 +340,7 @@ exports.assignWorker = async (req, res) => {
     }
     
     const worker = await User.findById(workerId);
-    if (!worker || worker.role !== 'worker') {
+    if (!worker || worker.role !== 'worker' || worker.is_active === false) {
       return res.status(400).json({ error: 'Invalid worker' });
     }
     
@@ -369,6 +389,7 @@ exports.assignWorker = async (req, res) => {
     
     await complaint.save();
     await recordCaseEvent(complaint._id, { type: 'WORKER_ASSIGNED', summary: `Assigned to ${worker.name}`, next_action: 'Worker should start field work', actor: req.user.name || 'supervisor', metadata: { worker_id: worker._id } }).catch(() => null);
+    appendLedgerEvent({ aggregateType: 'Complaint', aggregateId: complaint._id, eventType: 'WORKER_ASSIGNED', actor: req.user.name || 'supervisor', payload: { complaint_id: complaint.complaint_id, status: complaint.status, assigned_supervisor_id: complaint.assigned_supervisor_id, assigned_worker_id: worker._id, assigned_worker_name: worker.name, worker_assigned_at: complaint.worker_assigned_at, assigned_equipment: complaint.assigned_equipment } });
     
     res.json({ success: true, complaint });
   } catch (err) {
@@ -408,6 +429,7 @@ exports.startWork = async (req, res) => {
     
     await complaint.save();
     await recordCaseEvent(complaint._id, { type: 'WORK_STARTED', summary: 'Worker started field work', next_action: 'Wait for a completion proposal', actor: req.user.name || 'worker' }).catch(() => null);
+    appendLedgerEvent({ aggregateType: 'Complaint', aggregateId: complaint._id, eventType: 'WORK_STARTED', actor: req.user.name || 'worker', payload: { complaint_id: complaint.complaint_id, status: complaint.status, assigned_worker_id: complaint.assigned_worker_id } });
     
     res.json({ success: true, complaint });
   } catch (err) {
@@ -457,6 +479,7 @@ exports.completeWork = async (req, res) => {
     
     await complaint.save();
     await recordCaseEvent(complaint._id, { type: 'WORK_SUBMITTED', summary: 'Worker submitted a completion proposal', next_action: 'Citizen verification call must receive a yes', actor: req.user.name || 'worker' }).catch(() => null);
+    appendLedgerEvent({ aggregateType: 'Complaint', aggregateId: complaint._id, eventType: 'WORK_SUBMITTED', actor: req.user.name || 'worker', payload: { complaint_id: complaint.complaint_id, status: complaint.status, resolution: complaint.resolution, assigned_worker_id: complaint.assigned_worker_id } });
 
     // The field visit is complete even while the citizen verification call is
     // pending. Release the worker so the supervisor can allocate the next
@@ -472,6 +495,14 @@ exports.completeWork = async (req, res) => {
     
     // Initiate AI verification call
     const verificationResult = await initiateVerification(complaint, resolution_note, resolution_photos, geofence);
+    if (verificationResult.error && !verificationResult.blocked) {
+      return res.status(502).json({
+        success: false,
+        error: verificationResult.error,
+        verification: verificationResult,
+        complaint,
+      });
+    }
     
     res.status(202).json({
       success: true,
@@ -554,21 +585,18 @@ async function initiateVerification(complaint, resolution_note, resolution_photo
     return { provider: 'blocked', callId: null, blocked: true, reason };
   }
 
-  // The webhook and direct Vapi implementation are deliberately kept behind
-  // the same safety gate. Make is preferred when configured, with Vapi as a
-  // direct fallback for local development or a temporarily unavailable
-  // scenario.
-  const vapiToken = process.env.VAPI_SERVER_PRIVATE_KEY;
-  const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || 'eedb4653-e435-4885-873a-5aae7dd4d257';
-  const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID || '3a0ba65f-f19d-492b-8ea7-70f8e3ffc900';
-  
-  const firstMessage = `Hello, this is Kopargaon Municipal Council calling about the complaint ${title} at ${locationStr}. Our field worker has marked the work done. Has the issue been fully completed and resolved? Please answer yes or no.`;
-  
+  // Prefer the configured Make scenario, but always fall back to the same
+  // direct role-call service used by the other workflow stages. This keeps
+  // the first message, E.164 formatting, Radar gate, and VAPI configuration
+  // identical instead of silently showing a browser confirmation card.
   let callId = null;
   let provider = 'none';
   let providerError = '';
 
-  const callbackUrl = `${process.env.PUBLIC_CALLBACK_URL || 'http://localhost:8791'}/api/verification/result`;
+  const callbackBase = `${process.env.PUBLIC_CALLBACK_URL || 'http://localhost:8791'}/api/verification/result`;
+  const callbackUrl = process.env.CIVIC_CALLBACK_TOKEN
+    ? `${callbackBase}?token=${encodeURIComponent(process.env.CIVIC_CALLBACK_TOKEN)}`
+    : callbackBase;
   const verificationPayload = {
     complaintId: complaint.complaint_id,
     phone: normalizedPhone,
@@ -606,37 +634,31 @@ async function initiateVerification(complaint, resolution_note, resolution_photo
     }
   }
   
-  if (!callId && vapiToken) {
+  if (!callId && process.env.VAPI_SERVER_PRIVATE_KEY) {
     try {
-      const vapiResponse = await fetch('https://api.vapi.ai/call', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${vapiToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          assistantId: VAPI_ASSISTANT_ID,
-          type: 'outboundPhoneCall',
-          phoneNumberId: VAPI_PHONE_NUMBER_ID,
-          customer: { number: normalizedPhone },
-          assistantOverrides: { firstMessage }
-        })
+      const roleCall = await startRoleCall({
+        designation: 'Citizen',
+        recipient: normalizedPhone,
+        context: `We are calling about complaint ${title} at ${locationStr}. The field worker marked the work done. Ask the citizen clearly whether the issue is fully completed and resolved. Only an explicit yes may close the complaint. If the answer is no, keep the complaint open for supervisor follow-up.`,
+        firstMessage: `Hello Citizen. This is NagarSetu calling about the ${title.toLowerCase()} reported at ${locationStr}. The field team marked it done. Is the issue fully fixed? Please answer yes or no.`,
+        geofence,
+        callbackUrl,
+        metadata: { complaintId: complaint.complaint_id, purpose: 'resolution_verification' },
       });
-      
-      if (vapiResponse.ok) {
-        const callData = await vapiResponse.json();
-        callId = callData.id;
+      if (roleCall.status === 'BLOCKED') {
+        providerError = roleCall.reason || 'Radar safety check blocked the call.';
+      } else if (roleCall.callId) {
+        callId = roleCall.callId;
         provider = 'vapi';
         providerError = '';
       } else {
-        providerError = `Vapi rejected the call (${vapiResponse.status}).`;
-        console.error('Vapi call failed:', vapiResponse.status, await vapiResponse.text());
+        providerError = 'VAPI accepted the request without returning a call id.';
       }
     } catch (e) {
       providerError = `Vapi call unavailable: ${e.message}`;
       console.error('Vapi call error:', e.message);
     }
-  } else if (!callId && !vapiToken && !makeWebhook) {
+  } else if (!callId && !process.env.VAPI_SERVER_PRIVATE_KEY && !makeWebhook) {
     providerError = 'No Make webhook or Vapi server key is configured.';
   }
   
@@ -650,6 +672,20 @@ async function initiateVerification(complaint, resolution_note, resolution_photo
     evidence: callId ? evidenceStr : `Automated verification call could not be started. ${providerError}`
   };
   await complaint.save();
+  await recordCaseEvent(complaint._id, {
+    type: 'VERIFICATION_CALL_STARTED',
+    summary: callId ? 'NagarSetu started the citizen verification call' : 'NagarSetu queued citizen verification for retry',
+    next_action: callId ? 'Wait for an explicit citizen yes or no' : 'Retry the verification call after the provider issue is resolved',
+    actor: 'NagarSetu',
+    metadata: { provider, call_id: callId, error: providerError || undefined }
+  }).catch(() => null);
+  appendLedgerEvent({
+    aggregateType: 'Complaint',
+    aggregateId: complaint._id,
+    eventType: 'VERIFICATION_CALL_STARTED',
+    actor: 'NagarSetu',
+    payload: { complaint_id: complaint.complaint_id, status: complaint.status, provider, call_id: callId, error: providerError || undefined }
+  });
   
   // Save state
   state[complaint.complaint_id] = {
@@ -695,6 +731,14 @@ async function processVerificationResult(complaintId, callData) {
   // Update complaint. Webhooks and Vapi polling can both deliver the same
   // result, so keep the transition idempotent and never double-count work.
   const previousDecision = complaint.verification?.status;
+  const incomingCallId = callData.callId || callData.call_id || callData.id;
+  const currentCallId = complaint.verification?.call_id;
+  // A late or duplicated negative callback must not reopen a case that has
+  // already been closed by a clear yes. A future work cycle resets the
+  // verification status to calling, so this guard does not block rework.
+  if (previousDecision === 'confirmed' && decision !== 'confirmed' && (!incomingCallId || !currentCallId || incomingCallId === currentCallId)) {
+    return previousDecision;
+  }
   complaint.verification = complaint.verification || {};
   complaint.verification.status = decision;
   complaint.verification.completed_at = new Date();
@@ -740,6 +784,26 @@ async function processVerificationResult(complaintId, callData) {
   }
   
   await complaint.save();
+  await recordCaseEvent(complaint._id, {
+    type: decision === 'confirmed' ? 'CITIZEN_CONFIRMED' : 'CITIZEN_REJECTED',
+    summary: decision === 'confirmed' ? 'Citizen confirmed the resolution by phone' : 'Citizen reported the issue is not fixed by phone',
+    next_action: decision === 'confirmed' ? 'Archive the completed case' : 'Supervisor should review follow-up work',
+    status: decision === 'confirmed' ? 'RESOLVED' : 'MONITORING',
+    actor: 'citizen',
+    metadata: { call_id: complaint.verification?.call_id || callData.id }
+  }).catch(() => null);
+  appendLedgerEvent({
+    aggregateType: 'Complaint',
+    aggregateId: complaint._id,
+    eventType: decision === 'confirmed' ? 'CITIZEN_CONFIRMED' : 'CITIZEN_REJECTED',
+    actor: 'citizen',
+    payload: {
+      complaint_id: complaint.complaint_id,
+      status: complaint.status,
+      verification: complaint.verification,
+      citizen_confirmation: complaint.citizen_confirmation,
+    }
+  });
   
   // Update state file
   const fs = require('fs');
@@ -762,91 +826,18 @@ exports.processVerificationResult = processVerificationResult;
 
 // Verify completion (Supervisor)
 exports.verifyCompletion = async (req, res) => {
-  try {
-    const { note } = req.body;
-    
-    const complaint = await Complaint.findOne(complaintQuery(req.params.id));
-    if (!complaint) return res.status(404).json({ error: 'Complaint not found' });
-    
-    if (complaint.status !== 'COMPLETED') {
-      return res.status(400).json({ error: 'Complaint not in COMPLETED status' });
-    }
-    
-    complaint.status = 'VERIFIED';
-    complaint.resolution.supervisor_verified = true;
-    complaint.resolution.supervisor_verified_at = new Date();
-    complaint.resolution.supervisor_verified_by = req.user._id;
-    
-    // Send confirmation request to citizen
-    complaint.citizen_confirmation = {
-      sent_at: new Date()
-    };
-    
-    complaint.timeline.push({
-      event: 'Supervisor Verified',
-      actor_id: req.user._id,
-      actor_name: req.user.name,
-      actor_role: 'supervisor',
-      note: note || 'Supervisor verified completion',
-      timestamp: new Date()
-    });
-    
-    await complaint.save();
-    
-    res.json({ success: true, complaint });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to verify completion' });
-  }
+  // The worker submission starts the guarded citizen call directly. This
+  // legacy endpoint is intentionally non-mutating so supervisors cannot
+  // mark a case verified before the citizen says yes on the call.
+  return res.status(410).json({ error: 'Completion is verified by the citizen call after work is submitted.' });
 };
 
 // Citizen confirms resolution
 exports.citizenConfirm = async (req, res) => {
-  try {
-    const { confirmed } = req.body; // true = fixed, false = not fixed
-    
-    const complaint = await Complaint.findOne(complaintQuery(req.params.id));
-    if (!complaint) return res.status(404).json({ error: 'Complaint not found' });
-    
-    // Verify this is the citizen who filed
-    if (String(complaint.citizen_id) !== String(req.user._id)) {
-      return res.status(403).json({ error: 'Not your complaint' });
-    }
-    
-    if (complaint.status !== 'VERIFIED') {
-      return res.status(400).json({ error: 'Complaint not ready for confirmation' });
-    }
-    
-    complaint.citizen_confirmation = {
-      sent_at: complaint.citizen_confirmation?.sent_at,
-      response: confirmed ? 'CONFIRMED' : 'NOT_FIXED',
-      responded_at: new Date(),
-      confirmed_at: confirmed ? new Date() : undefined
-    };
-    
-    if (confirmed) {
-      complaint.status = 'CLOSED';
-    } else {
-      // Reopen for supervisor
-      complaint.status = 'REOPENED';
-      complaint.assigned_supervisor_id = null;
-      complaint.assigned_worker_id = null;
-    }
-    
-    complaint.timeline.push({
-      event: confirmed ? 'Citizen Confirmed' : 'Citizen Rejected',
-      actor_id: req.user._id,
-      actor_name: req.user.name,
-      actor_role: 'citizen',
-      note: confirmed ? 'Citizen confirmed the issue is resolved' : 'Citizen rejected - issue not resolved',
-      timestamp: new Date()
-    });
-    
-    await complaint.save();
-    
-    res.json({ success: true, status: complaint.status });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to confirm' });
-  }
+  // Final closure is voice-only. Keeping this route explicit and non-mutating
+  // prevents old clients or bookmarked legacy screens from bypassing the
+  // transcript decision and closing a case with a browser click.
+  return res.status(410).json({ error: 'Citizen confirmation is handled by the NagarSetu verification call.' });
 };
 
 // Request follow-up (Citizen)
@@ -988,15 +979,118 @@ exports.duplicateCheck = async (req, res) => {
 // Get supervisors list (for admin)
 exports.getSupervisors = async (req, res) => {
   try {
-    const supervisors = await User.find({ role: 'supervisor', is_active: true })
-      .select('name mobile module ward zone');
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can view the people directory' });
+    const activeFilter = req.query.includeInactive === 'true' ? {} : { is_active: true };
+    const supervisors = await User.find({ role: 'supervisor', ...activeFilter })
+      .select('name mobile email module ward zone is_active createdAt');
     
-    const workers = await User.find({ role: 'worker', is_active: true })
-      .select('name mobile supervisor_id worker_profile.status');
+    const workers = await User.find({ role: 'worker', ...activeFilter })
+      .select('name mobile email supervisor_id module ward zone worker_profile is_active createdAt');
     
     res.json({ supervisors, workers });
   } catch (err) {
     res.status(500).json({ error: 'Failed to get users' });
+  }
+};
+
+// Create a supervisor or worker from the admin people directory.
+exports.createTeamMember = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can add people' });
+    const { name, mobile, email, role, module = 'BOTH', district, ward, zone, designation } = req.body || {};
+    if (!name?.trim() || !mobile?.trim() || !['supervisor', 'worker'].includes(role)) {
+      return res.status(400).json({ error: 'Name, mobile, and a supervisor or worker role are required' });
+    }
+    const existing = await User.findOne({ mobile: mobile.trim() }).select('_id').lean();
+    if (existing) return res.status(409).json({ error: 'A person with this mobile number already exists' });
+
+    const person = new User({
+      name: name.trim(),
+      mobile: mobile.trim(),
+      email: email?.trim() || undefined,
+      role,
+      module: ['DEVELOPMENT', 'WASTE', 'BOTH'].includes(module) ? module : 'BOTH',
+      ward: (ward || district || '').trim() || undefined,
+      zone: zone?.trim() || undefined,
+      ...(role === 'worker' ? {
+        worker_profile: {
+          designation: designation?.trim() || 'Field worker',
+          active_tasks: 0,
+          max_capacity: 10,
+          is_available: true,
+          status: 'AVAILABLE',
+          contact_phone: mobile.trim(),
+          scorecard: { total_assigned: 0, total_completed: 0, avg_completion_time_hours: 0, rating_avg: 0 },
+        },
+      } : {}),
+    });
+    await person.save();
+    res.status(201).json({ success: true, person });
+  } catch (err) {
+    console.error('Create team member error:', err);
+    res.status(500).json({ error: 'Failed to add person' });
+  }
+};
+
+// Update a person without changing the four-role access model.
+exports.updateTeamMember = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can update people' });
+    const person = await User.findById(req.params.id);
+    if (!person || !['supervisor', 'worker'].includes(person.role)) return res.status(404).json({ error: 'Person not found' });
+    const { name, mobile, email, module, district, ward, zone, designation, is_active } = req.body || {};
+    if (mobile && mobile.trim() !== person.mobile) {
+      const duplicate = await User.findOne({ mobile: mobile.trim(), _id: { $ne: person._id } }).select('_id').lean();
+      if (duplicate) return res.status(409).json({ error: 'A person with this mobile number already exists' });
+      person.mobile = mobile.trim();
+    }
+    if (name?.trim()) person.name = name.trim();
+    if (email !== undefined) person.email = email?.trim() || undefined;
+    if (['DEVELOPMENT', 'WASTE', 'BOTH'].includes(module)) person.module = module;
+    if (district !== undefined || ward !== undefined) person.ward = String(ward || district || '').trim() || undefined;
+    if (zone !== undefined) person.zone = String(zone || '').trim() || undefined;
+    if (person.role === 'worker' && designation?.trim()) person.worker_profile.designation = designation.trim();
+    if (is_active !== undefined) {
+      const nextActive = Boolean(is_active);
+      if (!nextActive && person.is_active) {
+        const activeAssignments = await Complaint.countDocuments({
+          $or: [{ assigned_supervisor_id: person._id }, { assigned_worker_id: person._id }],
+          status: { $in: ['ASSIGNED', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] },
+        });
+        if (activeAssignments > 0) return res.status(409).json({ error: 'Reassign active complaints before removing this person' });
+      }
+      person.is_active = nextActive;
+    }
+    await person.save();
+    res.json({ success: true, person });
+  } catch (err) {
+    console.error('Update team member error:', err);
+    res.status(500).json({ error: 'Failed to update person' });
+  }
+};
+
+// Delete is a safe soft delete so historic complaint ownership remains auditable.
+exports.removeTeamMember = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can remove people' });
+    const person = await User.findById(req.params.id);
+    if (!person || !['supervisor', 'worker'].includes(person.role)) return res.status(404).json({ error: 'Person not found' });
+    const activeAssignments = await Complaint.countDocuments({
+      $or: [{ assigned_supervisor_id: person._id }, { assigned_worker_id: person._id }],
+      status: { $in: ['ASSIGNED', 'IN_PROGRESS', 'AWAITING_VERIFICATION'] },
+    });
+    if (activeAssignments > 0) return res.status(409).json({ error: 'Reassign active complaints before removing this person' });
+    person.is_active = false;
+    if (person.role === 'worker') {
+      person.worker_profile.status = 'UNAVAILABLE';
+      person.worker_profile.is_available = false;
+    }
+    await person.save();
+    if (person.role === 'supervisor') await User.updateMany({ supervisor_id: person._id }, { $unset: { supervisor_id: 1 } });
+    res.json({ success: true, removed: true, personId: person._id });
+  } catch (err) {
+    console.error('Remove team member error:', err);
+    res.status(500).json({ error: 'Failed to remove person' });
   }
 };
 
@@ -1024,7 +1118,7 @@ exports.dashboardStats = async (req, res) => {
     // Priority breakdown for assigned complaints
     const priorityBreakdown = await Complaint.aggregate([
       { $match: { ...baseFilter, status: 'ASSIGNED' } },
-      { $bucket: { groupBy: '$priority_score', boundaries: [0, 50, 75, 90, 101], default: 'Other', counts: { output: { $sum: 1 } } } }
+      { $bucket: { groupBy: '$priority_score', boundaries: [0, 50, 75, 90, 101], default: 'Other', output: { count: { $sum: 1 } } } }
     ]);
     
     res.json({

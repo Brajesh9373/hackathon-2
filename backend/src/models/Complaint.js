@@ -177,6 +177,15 @@ const complaintSchema = new mongoose.Schema({
   // Duplicate detection
   duplicate_of: { type: mongoose.Schema.Types.ObjectId, ref: 'Complaint' },
   linked_complaints: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Complaint' }],
+  integrity_assessment: {
+    status: { type: String, enum: ['SUPPORTED', 'UNVERIFIED', 'REVIEW_REQUIRED', 'CONTRADICTED'], default: 'UNVERIFIED' },
+    confidence: Number,
+    fingerprint: String,
+    signals: [String],
+    routing_allowed: { type: Boolean, default: true },
+    amplification_allowed: { type: Boolean, default: true },
+    assessed_at: Date,
+  },
   
 }, { timestamps: true });
 

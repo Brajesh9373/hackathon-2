@@ -12,10 +12,12 @@ const complaintAgentSchema = new mongoose.Schema({
   complaint_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Complaint', required: true, unique: true, index: true },
   name: { type: String, default: 'NagarSetu Case Officer' },
   status: { type: String, enum: ['MONITORING', 'WAITING_APPROVAL', 'ESCALATED', 'RESOLVED'], default: 'MONITORING' },
+  stage: { type: String, enum: ['INTAKE', 'TRIAGE', 'ROUTING', 'ASSIGNED', 'ACTIVE_WORK', 'VERIFICATION', 'COMPLETED', 'REOPENED'], default: 'INTAKE' },
   next_action: { type: String, default: 'Watch for a routing decision' },
   last_action: { type: String, default: 'Case officer created' },
   escalation_level: { type: Number, default: 0 },
   pending_approval: { type: Boolean, default: false },
+  proposals: { type: [mongoose.Schema.Types.Mixed], default: [] },
   case_memory: { type: mongoose.Schema.Types.Mixed, default: {} },
   event_log: { type: [agentEventSchema], default: [] },
 }, { timestamps: true });

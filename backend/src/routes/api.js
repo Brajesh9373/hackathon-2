@@ -415,7 +415,7 @@ router.post('/officers', auth, authorize('admin'), async (req, res) => {
       ward: district ? district.toLowerCase().replace(/\s+/g, '_') : undefined,
       module: ['DEVELOPMENT', 'WASTE', 'BOTH'].includes(module) ? module : 'BOTH',
       worker_profile: {
-        designation: designation || 'Field Officer',
+        designation: designation || 'Field worker',
         active_complaints_count: 0,
         max_capacity: 20,
         is_available: true,

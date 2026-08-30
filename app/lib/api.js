@@ -157,8 +157,13 @@ export const complaints = {
 
 export const agents = {
   forComplaint: (id) => request(`/agents/complaints/${id}`),
+  propose: (id, data = {}) => request(`/case-officer/complaints/${id}/proposals`, { method: 'POST', body: JSON.stringify(data) }),
+  approve: (id, proposalId) => request(`/case-officer/${id}/approve`, { method: 'POST', body: JSON.stringify({ proposal_id: proposalId }) }),
 };
-export const voiceIntake = { start: (safety) => request('/voice-intake/start', { method: 'POST', body: JSON.stringify({ safety }) }), result: (id, draft) => request(`/voice-intake/${id}/result`, { method: 'POST', body: JSON.stringify({ draft }) }), confirm: (id, edits) => request(`/voice-intake/${id}/confirm`, { method: 'POST', body: JSON.stringify({ edits }) }) };
+export const recovery = { status: () => request('/recovery/status'), restore: (aggregateIds = []) => request('/recovery/restore', { method: 'POST', body: JSON.stringify({ aggregateIds }) }) };
+export const truth = { queue: () => request('/truth/queue'), assess: data => request('/truth/assess', { method: 'POST', body: JSON.stringify(data) }), resolve: (id, decision, reason) => request(`/truth/cases/${id}`, { method: 'PATCH', body: JSON.stringify({ decision, reason }) }) };
+export const voiceIntake = { start: (safety) => request('/voice-intake/start', { method: 'POST', body: JSON.stringify({ safety }) }), get: (id) => request(`/voice-intake/${id}`), poll: (id) => request(`/voice-intake/${id}/poll`, { method: 'POST' }), result: (id, draft) => request(`/voice-intake/${id}/result`, { method: 'POST', body: JSON.stringify({ draft }) }), confirm: (id, edits) => request(`/voice-intake/${id}/confirm`, { method: 'POST', body: JSON.stringify({ edits }) }) };
+export const verification = { status: id => request(`/verification/${id}`) };
 
 // === CIVIC DECISION ENGINE ===
 // Responses are intentionally kept structured here; the UI formats them into
@@ -184,6 +189,10 @@ export const analytics = {
 // === RESOURCES ===
 export const resources = {
   supervisors: () => request('/complaints/admin/users'),
+  team: () => request('/complaints/admin/users?includeInactive=true'),
+  createPerson: (data) => request('/complaints/admin/users', { method: 'POST', body: JSON.stringify(data) }),
+  updatePerson: (id, data) => request(`/complaints/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  removePerson: (id) => request(`/complaints/admin/users/${id}`, { method: 'DELETE' }),
   officers: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return request(`/officers?${qs}`);

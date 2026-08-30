@@ -5,10 +5,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import { auth, clearToken, getStoredUser, resources } from '../lib/api';
 import { initials } from './CivicUI';
 
-const roleAliases = { citizen: 'citizen', admin: 'admin', supervisor: 'supervisor', worker: 'worker', super_admin: 'admin', department_manager: 'admin', district_officer: 'admin', cm: 'admin', cm_staff: 'admin', officer: 'worker' };
+const roleAliases = { citizen: 'citizen', admin: 'admin', supervisor: 'supervisor', worker: 'worker' };
 const navByRole = {
   citizen: [['Overview', '/citizen'], ['Speak to NagarSetu', '/citizen/new'], ['My complaints', '/citizen/complaints']],
-  admin: [['Overview', '/admin'], ['Routing desk', '/admin/complaints'], ['People', '/admin/team'], ['Recovery', '/admin/recovery'], ['Truth Center', '/admin/truth']],
+  admin: [['Overview', '/admin'], ['Routing desk', '/admin/complaints'], ['Heat map', '/admin/heatmap'], ['People', '/admin/team'], ['Recovery', '/admin/recovery'], ['Truth Center', '/admin/truth']],
   supervisor: [['Overview', '/supervisor'], ['Priority queue', '/supervisor/queue'], ['Routes', '/supervisor/routes']],
   worker: [['My work', '/worker'], ['Completed', '/worker/completed']],
 };

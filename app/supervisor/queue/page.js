@@ -57,13 +57,13 @@ export default function SupervisorQueuePage() {
     <PageIntro eyebrow="PRIORITY QUEUE" title="Decide, assign, move on." detail="The engine explains urgency; you choose the field owner." action={<button className="v-button v-button-ghost" onClick={load}>Refresh</button>} />
     <div className="v-filterbar"><button className={`v-filter ${filter === 'active' ? 'is-active' : ''}`} onClick={() => setFilter('active')}>Active</button><button className={`v-filter ${filter === 'unassigned' ? 'is-active' : ''}`} onClick={() => setFilter('unassigned')}>Needs an owner</button><button className={`v-filter ${filter === 'all' ? 'is-active' : ''}`} onClick={() => setFilter('all')}>All</button><span className="v-result-count">{visible.length} records</span></div>
     {error && <p className="v-form-error">{error}</p>}
-    {loading ? <div className="v-loading" style={{ minHeight: 300 }}><div className="v-loading-mark">N</div><p>Reading the queue…</p></div> : visible.length ? <>
+    {loading ? <div className="v-loading" style={{ minHeight: 300 }}><div className="v-loading-mark">N</div><p>Reading the queue</p></div> : visible.length ? <>
       <div className="v-table-wrap"><table className="v-table"><thead><tr><th>Complaint</th><th>Priority</th><th>Status</th><th>Field owner</th></tr></thead><tbody>{visible.map(item => {
         const key = item._id || item.complaint_id;
         const assignedName = item.assigned_worker_id?.name || item.assigned_worker_name;
         return <tr key={key} className={focused === key || focused === item.complaint_id ? 'is-focused' : ''}><td><strong>{item.complaint_id}</strong><small>{item.complaint_text || 'Civic issue'}</small><small>{complaintLocation(item)}</small></td><td><div className="v-priority-cell"><PriorityPill value={item.priority_score} /><button className="v-text-button" onClick={() => setFocused(key)}>Explain</button></div></td><td><StatusPill value={item.status} /></td><td><AssignSelect complaint={{ ...item, assigned_officer_id: item.assigned_worker_id?._id || item.assigned_worker_id }} people={people} busy={busy === item._id} onAssign={assign} />{assignedName && <small className="v-assigned-name">Assigned to {assignedName}</small>}</td></tr>;
       })}</tbody></table></div>
       {focused && (() => { const item = items.find(entry => (entry._id || entry.complaint_id) === focused || entry.complaint_id === focused); return item ? <PriorityBrief complaint={item} onClose={() => setFocused(null)} /> : null; })()}
-    </> : <EmptyState icon="≡" title="Nothing needs attention" detail="New complaints will appear here after the admin routes them." />}
+    </> : <EmptyState title="Nothing needs attention" detail="New complaints will appear here after the admin routes them." />}
   </PortalShell>;
 }
