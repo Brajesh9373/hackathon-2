@@ -13,6 +13,10 @@ import {
   isLocationAccurateEnough,
 } from './radarSafetyLogic.mjs';
 
+// Radar remains available in the codebase for the presentation build, but is
+// intentionally disabled at runtime until the safety demo is turned on.
+const RADAR_ENABLED = process.env.NEXT_PUBLIC_RADAR_ENABLED === 'true';
+
 export const RESTRICTED_PLACE_TYPES = {
   hospital: 'Hospital',
   clinic: 'Clinic / medical centre',
@@ -61,6 +65,7 @@ function radarCall(method, options) {
 
 export function initRadar() {
   if (typeof window === 'undefined') return false;
+  if (!RADAR_ENABLED) return false;
   if (radarInitialized) return true;
   const apiKey = process.env.NEXT_PUBLIC_RADAR_PUBLISHABLE_KEY;
   if (!apiKey) return false;
@@ -75,6 +80,7 @@ export function initRadar() {
 }
 
 export function isRadarInitialized() { return radarInitialized; }
+export function isRadarEnabled() { return RADAR_ENABLED; }
 
 function blocked(reason, extra = {}) {
   return { canCall: false, reason, nearbyPlaces: [], ...extra };
@@ -82,6 +88,15 @@ function blocked(reason, extra = {}) {
 
 /** Check a known citizen/complaint coordinate without using the worker's GPS. */
 export async function checkCoordinatesForCalling(coordinates) {
+  if (!RADAR_ENABLED) {
+    const hasCoordinates = coordinates && Number.isFinite(Number(coordinates.latitude)) && Number.isFinite(Number(coordinates.longitude));
+    return {
+      canCall: true,
+      reason: 'Radar safety gate is disabled for this demo.',
+      nearbyPlaces: [],
+      ...(hasCoordinates ? { userLocation: { latitude: Number(coordinates.latitude), longitude: Number(coordinates.longitude) } } : {}),
+    };
+  }
   if (!coordinates || !Number.isFinite(Number(coordinates.latitude)) || !Number.isFinite(Number(coordinates.longitude))) {
     return blocked('Citizen location is missing, so the automated call is held.');
   }
@@ -128,6 +143,7 @@ export async function checkCoordinatesForCalling(coordinates) {
 
 /** Check the current browser location, used only by the safety diagnostics UI. */
 export async function checkLocationForCalling() {
+  if (!RADAR_ENABLED) return { canCall: true, reason: 'Radar safety gate is disabled for this demo.', nearbyPlaces: [] };
   if (!radarInitialized && !initRadar()) {
     return blocked('Radar safety verification is not configured, so the automated call is held.');
   }
@@ -147,6 +163,7 @@ export async function checkLocationForCalling() {
 }
 
 export async function searchNearbyPlaces(location, tags = [], radius = 500) {
+  if (!RADAR_ENABLED) return [];
   if (!radarInitialized && !initRadar()) return [];
   try {
     const result = await radarCall('searchPlaces', { near: location, radius, categories: tags, limit: 10 });

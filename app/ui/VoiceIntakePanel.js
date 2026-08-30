@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { voiceIntake } from '../lib/api';
-import { checkCoordinatesForCalling } from '../lib/geofencing';
+import { checkCoordinatesForCalling, isRadarEnabled } from '../lib/geofencing';
 import { InlineNotice } from './PortalBlocks';
 
 const steps = { idle: 'Start a private call with NagarSetu. The call collects the issue and prepares a draft.', starting: 'Checking call safety and connecting you.', calling: 'NagarSetu is calling you now. Keep this page open while you speak.', draft: 'Your voice note is ready to review before submission.', confirmed: 'Your complaint is now on the municipal record.' };
@@ -10,17 +10,24 @@ const steps = { idle: 'Start a private call with NagarSetu. The call collects th
 export default function VoiceIntakePanel({ onConfirmed }) {
   const [state, setState] = useState('idle'); const [session, setSession] = useState(null); const [error, setError] = useState(''); const [location, setLocation] = useState(null); const timer = useRef(null);
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+  const startCall = async safety => {
+    setLocation(safety);
+    if (!safety.canCall) { setState('idle'); return setError(safety.reason); }
+    const result = await voiceIntake.start(safety);
+    if (!result?.success) { setState('idle'); return setError(result?.error || 'Could not start the call.'); }
+    setSession({ _id: result.sessionId, status: result.status }); setState('calling');
+    timer.current = setInterval(async () => { const next = await voiceIntake.poll(result.sessionId); if (next?.session) { setSession(next.session); if (next.session.status === 'DRAFT_READY') { setState('draft'); clearInterval(timer.current); } } }, 5000);
+  };
   const captureAndStart = () => {
     setError(''); setState('starting');
+    if (!isRadarEnabled()) {
+      startCall({ canCall: true, reason: 'Radar safety gate is disabled for this demo.', nearbyPlaces: [] });
+      return;
+    }
     if (!navigator.geolocation) return setError('Location access is needed to make a safe automated call.');
     navigator.geolocation.getCurrentPosition(async position => {
       const safety = await checkCoordinatesForCalling({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy });
-      setLocation(safety);
-      if (!safety.canCall) { setState('idle'); return setError(safety.reason); }
-      const result = await voiceIntake.start(safety);
-      if (!result?.success) { setState('idle'); return setError(result?.error || 'Could not start the call.'); }
-      setSession({ _id: result.sessionId, status: result.status }); setState('calling');
-      timer.current = setInterval(async () => { const next = await voiceIntake.poll(result.sessionId); if (next?.session) { setSession(next.session); if (next.session.status === 'DRAFT_READY') { setState('draft'); clearInterval(timer.current); } } }, 5000);
+      startCall(safety);
     }, () => { setState('idle'); setError('Location access was not granted, so the automated call is held for safety.'); });
   };
   const confirm = async () => { setError(''); const result = await voiceIntake.confirm(session._id, session.draft); if (result?.success) { setState('confirmed'); onConfirmed?.(result.complaint); } else setError(result?.error || 'The draft could not be submitted.'); };
