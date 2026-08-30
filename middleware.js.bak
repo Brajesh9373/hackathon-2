@@ -57,20 +57,20 @@ export function middleware(request) {
       return NextResponse.rewrite(url);
     }
 
-    if (subdomain === 'officer') {
+    if (subdomain === 'worker') {
       if (url.pathname === '/' || url.pathname === '/officer') {
-        url.pathname = '/officer';
-      } else if (!url.pathname.startsWith('/officer')) {
-        url.pathname = `/officer${url.pathname}`;
+        url.pathname = '/worker';
+      } else if (!url.pathname.startsWith('/worker')) {
+        url.pathname = `/worker${url.pathname}`;
       }
       return NextResponse.rewrite(url);
     }
 
-    if (['cm', 'dm', 'dept', 'dashboard'].includes(subdomain)) {
+    if (['admin', 'supervisor'].includes(subdomain)) {
       if (url.pathname === '/' || url.pathname === '/dashboard') {
-        url.pathname = '/dashboard';
-      } else if (!url.pathname.startsWith('/dashboard')) {
-        url.pathname = `/dashboard${url.pathname}`;
+        url.pathname = `/${subdomain}`;
+      } else if (!url.pathname.startsWith(`/${subdomain}`)) {
+        url.pathname = `/${subdomain}${url.pathname}`;
       }
       return NextResponse.rewrite(url);
     }

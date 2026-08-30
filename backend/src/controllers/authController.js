@@ -6,6 +6,15 @@ const JWT_SECRET = process.env.JWT_SECRET || 'vaani-jwt-secret-change-in-product
 const REFRESH_SECRET = process.env.REFRESH_TOKEN_SECRET || 'vaani-refresh-secret-change-in-production';
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
+// The frontend exposes four plain-language workspaces. Keep the seeded backend
+// roles behind this boundary so the demo buttons always land on usable APIs.
+const DEMO_ROLE_BY_MOBILE = {
+  '+919800000020': { name: 'Citizen', role: 'citizen' },
+  '+919999000023': { name: 'Civic Admin', role: 'super_admin' },
+  '+919999000004': { name: 'Area Supervisor', role: 'department_manager' },
+  '+919999000005': { name: 'Field Worker', role: 'officer' },
+};
+
 function generateTokens(user) {
   const accessToken = jwt.sign(
     { id: user._id, role: user.role },
@@ -26,14 +35,20 @@ exports.sendOtp = async (req, res) => {
     if (!mobile) return res.status(400).json({ error: 'Mobile number required' });
 
     let user = await User.findOne({ mobile });
+    const demoProfile = DEMO_MODE ? DEMO_ROLE_BY_MOBILE[mobile] : null;
 
     // Auto-create citizen if not exists
     if (!user) {
       user = await User.create({
-        name: 'Citizen',
+        name: demoProfile?.name || 'Citizen',
         mobile,
-        role: 'citizen',
+        role: demoProfile?.role || 'citizen',
       });
+    } else if (demoProfile && user.role === 'citizen' && user.name === 'Citizen') {
+      // Earlier demo runs may have auto-created these numbers as citizens.
+      // Normalize only those placeholder records, never an existing named user.
+      user.name = demoProfile.name;
+      user.role = demoProfile.role;
     }
 
     // Generate OTP

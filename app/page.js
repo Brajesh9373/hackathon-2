@@ -1,264 +1,67 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth, setToken, setStoredUser } from './lib/api';
+import { auth, setStoredUser, setToken } from './lib/api';
 
 const roles = [
-  { id: 'admin', label: 'Admin', labelHi: 'प्रशासक', icon: '🏛️', desc: 'Municipal Officer', phone: '+919999000001' },
-  { id: 'supervisor', label: 'Supervisor', labelHi: 'पर्यवेक्षक', icon: '👨‍💼', desc: 'Field Supervisor', phone: '+919999000002' },
-  { id: 'worker', label: 'Worker', labelHi: 'कार्यकर्ता', icon: '👷', desc: 'Field Worker', phone: '+919999000010' },
-  { id: 'citizen', label: 'Citizen', labelHi: 'नागरिक', icon: '👤', desc: 'File & Track', phone: '+919800000001' },
+  { id: 'citizen', name: 'Citizen', desc: 'Raise an issue and follow every update.', icon: '✦', phone: '+919800000020', tint: 'coral' },
+  { id: 'admin', name: 'Admin', desc: 'Route demand across the civic network.', icon: '◈', phone: '+919999000023', tint: 'blue' },
+  { id: 'supervisor', name: 'Supervisor', desc: 'Prioritise work and keep crews moving.', icon: '⌁', phone: '+919999000004', tint: 'amber' },
+  { id: 'worker', name: 'Worker', desc: 'See your queue, evidence and completed work.', icon: '↗', phone: '+919999000005', tint: 'teal' },
 ];
 
 export default function LoginPage() {
-  const [step, setStep] = useState('role');
-  const [selectedRole, setSelectedRole] = useState('');
-  const [phone, setPhone] = useState('+91 ');
-  const [otp, setOtp] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
   const router = useRouter();
+  const [selected, setSelected] = useState('citizen');
+  const [phone, setPhone] = useState('+91 9800000020');
+  const [otp, setOtp] = useState('');
+  const [step, setStep] = useState('role');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const role = roles.find(item => item.id === selected) || roles[0];
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const subdomain = urlParams.get('subdomain');
-      
-      if (subdomain === 'citizen') {
-        setSelectedRole('citizen');
-        setPhone('+91 9800000001');
-      } else if (subdomain === 'supervisor') {
-        setSelectedRole('supervisor');
-        setPhone('+91 9999000002');
-      } else if (subdomain === 'admin') {
-        setSelectedRole('admin');
-        setPhone('+91 9999000001');
-      } else if (subdomain === 'worker') {
-        setSelectedRole('worker');
-        setPhone('+91 9999000010');
-      }
-    }
-  }, []);
-
-  const handlePhoneChange = (e) => {
-    let input = e.target.value;
-    if (!input.startsWith('+91')) {
-      let digits = input.replace(/\D/g, '');
-      if (digits.startsWith('91')) digits = digits.slice(2);
-      input = '+91' + digits;
-    }
-    let suffix = input.substring(3);
-    let digits = suffix.replace(/\D/g, '').slice(0, 10);
-    setPhone('+91 ' + digits);
+  const chooseRole = item => { setSelected(item.id); setPhone(`+91 ${item.phone.slice(3)}`); setError(''); };
+  const finishLogin = result => {
+    if (!result?.success) return false;
+    setToken(result.accessToken);
+    if (typeof window !== 'undefined') localStorage.setItem('vaani_refresh', result.refreshToken || '');
+    setStoredUser({ ...result.user, portalRole: selected, portalName: role.name });
+    router.push(`/${selected}`);
+    return true;
+  };
+  const sendOtp = async event => {
+    event.preventDefault();
+    if (phone.replace(/\D/g, '').length < 12) return setError('Enter a 10-digit mobile number.');
+    setBusy(true); setError('');
+    const result = await auth.sendOtp(phone.replace(/\s/g, ''));
+    setBusy(false);
+    if (result?.success) setStep('otp'); else setError(result?.error || 'Could not send the code. Try again.');
+  };
+  const verifyOtp = async event => {
+    event.preventDefault(); setBusy(true); setError('');
+    const result = await auth.verifyOtp(phone.replace(/\s/g, ''), otp || '123456');
+    setBusy(false);
+    if (!finishLogin(result)) setError(result?.error || 'That code did not work.');
+  };
+  const demoLogin = async () => {
+    setBusy(true); setError('');
+    await auth.sendOtp(role.phone);
+    const result = await auth.verifyOtp(role.phone, '123456');
+    setBusy(false);
+    if (!finishLogin(result)) setError(result?.error || 'Demo workspace is unavailable.');
   };
 
-  const isPhoneValid = phone.replace(/\D/g, '').length === 12;
-
-  const handleSendOTP = async (e) => {
-    e.preventDefault();
-    if (!isPhoneValid) return;
-    setIsLoading(true);
-    setError('');
-    const cleanPhone = phone.replace(/\s+/g, '');
-    const result = await auth.sendOtp(cleanPhone);
-    setIsLoading(false);
-    if (result.success) {
-      setOtpSent(true);
-      setStep('otp');
-    } else {
-      setError(result.error || 'Failed to send OTP');
-    }
-  };
-
-  const handleVerifyOTP = async (e) => {
-    e.preventDefault();
-    if (!otp) return;
-    setIsLoading(true);
-    setError('');
-    const cleanPhone = phone.replace(/\s+/g, '');
-    const result = await auth.verifyOtp(cleanPhone, otp);
-    setIsLoading(false);
-    if (result.success) {
-      setToken(result.accessToken);
-      localStorage.setItem('vaani_refresh', result.refreshToken);
-      setStoredUser(result.user);
-      redirectByRole(result.user.role);
-    } else {
-      setError(result.error || 'Invalid OTP');
-    }
-  };
-
-  const redirectByRole = (role) => {
-    switch (role) {
-      case 'citizen': router.push('/citizen'); break;
-      case 'admin': router.push('/dashboard'); break;
-      case 'supervisor': router.push('/supervisor'); break;
-      case 'worker': router.push('/worker'); break;
-      default: router.push('/dashboard');
-    }
-  };
-
-  const handleQuickDemo = async (role) => {
-    setSelectedRole(role.id);
-    setIsLoading(true);
-    setError('');
-    setPhone(role.phone);
-    const cleanPhone = role.phone.replace(/\s+/g, '');
-    await auth.sendOtp(cleanPhone);
-    const result = await auth.verifyOtp(cleanPhone, '123456');
-    setIsLoading(false);
-    if (result.success) {
-      setToken(result.accessToken);
-      localStorage.setItem('vaani_refresh', result.refreshToken);
-      setStoredUser(result.user);
-      redirectByRole(result.user.role);
-    } else {
-      redirectByRole(role.id);
-    }
-  };
-
-  return (
-    <div className="login-page">
-      <div className="login-card">
-        <div className="login-header">
-          <div className="login-emblem">🏛️</div>
-          <h1 className="login-title">KOPARGAON</h1>
-          <p style={{ fontSize: '12px', color: 'var(--t2)', fontWeight: 600, marginTop: '4px' }}>
-            Civic Platform
-          </p>
-          <p className="login-subtitle">कोपरगांव नागरिक मंच</p>
-          <p style={{ fontSize: '11px', color: 'var(--t2)', marginTop: '4px' }}>
-            Kopargaon Municipal Council, Nashik, Maharashtra
-          </p>
-          <div className="login-tricolor" />
-        </div>
-
-        {error && (
-          <div style={{
-            background: '#FFEBEE', border: '1px solid #EF9A9A', borderRadius: 'var(--radius-md)',
-            padding: 'var(--space-3) var(--space-4)', color: '#C62828', fontSize: 'var(--text-sm)',
-            marginBottom: 'var(--space-4)', textAlign: 'center',
-          }}>
-            {error}
-          </div>
-        )}
-
-        {step === 'role' && (
-          <>
-            <div style={{ marginBottom: 'var(--space-6)' }}>
-              <p style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-4)', textAlign: 'center' }}>
-                Select Role / भूमिका चुनें
-              </p>
-              <div className="login-role-grid">
-                {roles.map(role => (
-                  <button
-                    key={role.id}
-                    className={`login-role-btn ${selectedRole === role.id ? 'active' : ''}`}
-                    onClick={() => {
-                      setSelectedRole(role.id);
-                      setPhone(role.phone);
-                    }}
-                  >
-                    <span className="login-role-icon">{role.icon}</span>
-                    <div className="login-role-text-container">
-                      <span className="login-role-label">{role.label}</span>
-                      <span className="login-role-label-hi">{role.desc}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <form onSubmit={handleSendOTP}>
-              <div className="form-group">
-                <label className="form-label">Mobile Number / मोबाइल नंबर</label>
-                <input
-                  type="tel"
-                  className="form-input"
-                  placeholder="+91 XXXXXXXXXX"
-                  value={phone}
-                  onChange={handlePhoneChange}
-                />
-              </div>
-              <button
-                type="submit"
-                className="btn btn-primary btn-lg"
-                disabled={!isPhoneValid || isLoading}
-                style={{ width: '100%', marginTop: 'var(--space-4)' }}
-              >
-                {isLoading ? 'Sending OTP...' : '📱 Send OTP'}
-              </button>
-            </form>
-          </>
-        )}
-
-        {step === 'otp' && (
-          <form onSubmit={handleVerifyOTP}>
-            <div style={{
-              background: 'var(--color-green-surface)', padding: 'var(--space-4)',
-              borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-6)',
-              textAlign: 'center', fontSize: 'var(--text-sm)',
-            }}>
-              OTP sent to <strong>{phone}</strong>
-              <div style={{ marginTop: 4, color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)' }}>
-                Demo OTP: <strong>123456</strong>
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Enter OTP / OTP दर्ज करें</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Enter 6-digit OTP"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                maxLength={6}
-                style={{ fontSize: 'var(--text-2xl)', textAlign: 'center', letterSpacing: '8px', fontFamily: 'var(--font-mono)' }}
-                autoFocus
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="btn btn-primary btn-lg"
-              disabled={otp.length < 6 || isLoading}
-              style={{ width: '100%', marginTop: 'var(--space-4)' }}
-            >
-              {isLoading ? 'Verifying...' : '🔐 Verify & Login'}
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => { setStep('role'); setOtp(''); setError(''); }}
-              style={{ width: '100%', marginTop: 'var(--space-3)' }}
-            >
-              ← Change Number
-            </button>
-          </form>
-        )}
-
-        <div className="login-quick-demo">
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginBottom: 'var(--space-3)' }}>
-            Quick Demo Access
-          </p>
-          <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'center', flexWrap: 'wrap' }}>
-            {roles.map(role => (
-              <button key={role.id} className="btn btn-outline btn-sm" onClick={() => handleQuickDemo(role)}>
-                {role.icon} {role.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="login-footer">
-          <p>Kopargaon Municipal Council</p>
-          <p style={{ marginTop: '4px' }}>कोपरगांव नगर परिषद</p>
-        </div>
-      </div>
-    </div>
-  );
+  return <main className="v-login">
+    <div className="v-login-grid" />
+    <section className="v-login-brand"><span className="v-brand-mark v-brand-mark-large">V</span><div><strong>VAANI</strong><span>civic operations, clearly connected</span></div><p>One shared register for the people who raise, route, supervise and complete public work.</p><div className="v-login-quote"><span>“</span><strong>Every complaint gets a clear owner<br />and a visible next step.</strong></div></section>
+    <section className="v-login-panel"><div className="v-login-kicker">KOPARGAON MUNICIPAL COUNCIL <span>•</span> SECURE DEMO</div><h1>Choose your<br /><em>workspace.</em></h1><p className="v-login-lede">Start where you belong. You can move through the entire service journey with one simple sign-in.</p>
+      {step === 'role' ? <>
+        <div className="v-role-grid">{roles.map(item => <button type="button" key={item.id} className={`v-role-card ${selected === item.id ? 'is-selected' : ''}`} onClick={() => chooseRole(item)}><span className={`v-role-icon v-role-${item.tint}`}>{item.icon}</span><span><strong>{item.name}</strong><small>{item.desc}</small></span><b>↗</b></button>)}</div>
+        <form className="v-login-form" onSubmit={sendOtp}><label>Mobile number<input value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" /></label><button className="v-button v-button-primary v-button-wide" disabled={busy}>{busy ? 'Sending…' : 'Continue with mobile'} <span>→</span></button></form>
+        <button className="v-demo-link" type="button" onClick={demoLogin} disabled={busy}>Use the demo workspace <span>↗</span></button>
+      </> : <form className="v-login-form" onSubmit={verifyOtp}><div className="v-otp-note"><span className="v-role-icon v-role-teal">✓</span><div><strong>Code sent to {phone}</strong><small>Use 123456 in the demo environment.</small></div></div><label>One-time code<input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="123456" inputMode="numeric" autoFocus /></label><button className="v-button v-button-primary v-button-wide" disabled={busy}>{busy ? 'Opening…' : 'Open workspace'} <span>→</span></button><button type="button" className="v-demo-link" onClick={() => setStep('role')}>← Change workspace</button></form>}
+      {error && <p className="v-form-error">{error}</p>}<small className="v-login-foot">By continuing, you agree to use this civic workspace responsibly.</small>
+    </section>
+  </main>;
 }
