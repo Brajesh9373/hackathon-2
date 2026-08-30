@@ -8,6 +8,7 @@ const { appendLedgerEvent } = require('../services/recoveryLedgerService');
 const { assessIntegrity, fingerprintClaim } = require('../services/misinformationService');
 const { startRoleCall } = require('../services/callOrchestrationService');
 const FactCheckCase = require('../models/FactCheckCase');
+const { canonicalCivicLocation } = require('../config/civicLocation');
 
 function savePriorityResult(complaint, result) {
   const priority = result?.priority || {};
@@ -55,7 +56,7 @@ function normalizePhoneNumber(phone) {
 // File a new complaint (Citizen)
 exports.fileComplaint = async (req, res) => {
   try {
-    const { complaint_text, category, location, media_urls, source, impact_factors } = req.body;
+    const { complaint_text, category, media_urls, source, impact_factors } = req.body;
     
     if (!complaint_text || !category) {
       return res.status(400).json({ error: 'Complaint text and category are required' });
@@ -75,7 +76,9 @@ exports.fileComplaint = async (req, res) => {
       citizen_mobile: req.user.mobile,
       complaint_text,
       media_urls: media_urls || [],
-      location: location || {},
+      // The hackathon demo is intentionally scoped to one verifiable place.
+      // Never trust a client-provided location to move a record off campus.
+      location: canonicalCivicLocation(),
       category,
       module: complaintModule,
       impact_factors: impact_factors || {},

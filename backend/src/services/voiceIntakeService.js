@@ -1,6 +1,8 @@
 const { buildRoleFirstMessage, buildRoleSystemPrompt, normalizePhone } = require('./callScriptService');
+const { canonicalCivicLocation } = require('../config/civicLocation');
 
 const CATEGORIES = new Set(['BLOCKED_DRAIN', 'BLOCKED_SEWAGE', 'POTHOLE', 'MANHOLE_ISSUE', 'ROAD_DAMAGE', 'FLOODING', 'WATER_LOGGING', 'STREETLIGHT', 'ELECTRICITY', 'GARBAGE_NOT_COLLECTED', 'BIN_OVERFLOW', 'ILLEGAL_DUMPING', 'WASTE_ACCUMULATION', 'MISSED_COLLECTION', 'OTHER']);
+const INTAKE_END_PHRASE = 'Thank you for filing a complaint with NagarSetu.';
 
 function validateDraft(input = {}) {
   const category = CATEGORIES.has(String(input.category || '').toUpperCase()) ? String(input.category).toUpperCase() : '';
@@ -21,9 +23,15 @@ function validateDraft(input = {}) {
   return { valid: missingFields.length === 0, draft, missingFields };
 }
 
+function canonicalizeDraftLocation(checked) {
+  if (!checked || typeof checked !== 'object') return checked;
+  return { ...checked, draft: { ...(checked.draft || {}), location: canonicalCivicLocation() } };
+}
+
 function buildVoiceIntakePayload({ phone, assistantId, phoneNumberId, callbackUrl, metadata = {} }) {
-  const intakePurpose = 'Tell me only three things: what happened, where it happened, and the category. I will prepare a complaint for your review before anything is submitted.';
+  const intakePurpose = 'Tell me only three things: what happened, where it happened, and the category. The location for this pilot is Sanjivani University, Kopargaon. After your third answer I will thank you and end the call.';
   const firstMessage = buildRoleFirstMessage({ designation: 'Citizen', purpose: intakePurpose });
+  const intakePrompt = 'Collect exactly three structured civic complaint fields and nothing else. Ask one short question at a time: first what happened, then where it happened, then the category. The pilot location is fixed at Sanjivani University, Kopargaon, so ask the location question only to confirm that place and never request a different address or extra location detail. Do not ask for urgency, ward, evidence, phone number, identity, timing, photos, language, contact details, or any other information. If the caller volunteers extra details, do not add them to structured output. Do not submit the complaint during the call; return only complaint_text, address, and category for citizen review. After your third answer, once all three fields are captured, do not ask a follow-up question. Say exactly "Thank you for filing a complaint with NagarSetu." once, then use the end-call action immediately.';
   const payload = {
     assistantId,
     phoneNumberId,
@@ -32,7 +40,9 @@ function buildVoiceIntakePayload({ phone, assistantId, phoneNumberId, callbackUr
     metadata,
     assistantOverrides: {
       firstMessage,
-      model: { provider: process.env.VAPI_MODEL_PROVIDER || 'openai', model: process.env.VAPI_MODEL || 'gpt-4.1', messages: [{ role: 'system', content: buildRoleSystemPrompt({ designation: 'Citizen', purpose: 'Collect only three structured civic complaint fields. Ask exactly for what happened, the location or landmark, and the category. Ask one short question at a time. Do not ask for urgency, ward, evidence, phone number, identity, timing, photos, or any other information. If the caller volunteers extra details, do not add them to structured output. Do not submit the complaint during the call; return only these three fields for citizen review.' }) }] },
+      endCallMessage: INTAKE_END_PHRASE,
+      endCallPhrases: [INTAKE_END_PHRASE],
+      model: { provider: process.env.VAPI_MODEL_PROVIDER || 'openai', model: process.env.VAPI_MODEL || 'gpt-4.1', messages: [{ role: 'system', content: buildRoleSystemPrompt({ designation: 'Citizen', purpose: intakePrompt }) }] },
       analysisPlan: {
         structuredDataPlan: {
           enabled: true,
@@ -76,4 +86,4 @@ async function pollVoiceIntake(callId, fetchImpl = fetch) {
   return { status: data.status, endedReason: data.endedReason, draft: extractDraftFromCall(data), transcript: data.artifact?.transcript || data.transcript || '' };
 }
 
-module.exports = { CATEGORIES, validateDraft, buildVoiceIntakePayload, extractDraftFromCall, startVoiceIntake, pollVoiceIntake };
+module.exports = { CATEGORIES, INTAKE_END_PHRASE, validateDraft, canonicalizeDraftLocation, buildVoiceIntakePayload, extractDraftFromCall, startVoiceIntake, pollVoiceIntake };

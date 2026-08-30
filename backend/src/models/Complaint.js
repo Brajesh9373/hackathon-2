@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { canonicalCivicLocation } = require('../config/civicLocation');
 
 // Timeline entry for audit trail
 const timelineEntrySchema = new mongoose.Schema({
@@ -51,6 +52,8 @@ const complaintSchema = new mongoose.Schema({
       lng: { type: Number }
     },
     address: String,
+    area: String,
+    district: String,
     ward: String,
     zone: String,
     pincode: String
@@ -188,6 +191,14 @@ const complaintSchema = new mongoose.Schema({
   },
   
 }, { timestamps: true });
+
+// The pitch/demo runs one municipal pilot at one known campus. Enforce that
+// boundary at the model layer as well as in the HTTP controllers so a future
+// intake path cannot accidentally write a different map location.
+complaintSchema.pre('validate', function enforcePilotLocation(next) {
+  if (this.isNew || this.isModified('location')) this.location = canonicalCivicLocation();
+  next();
+});
 
 // Indexes
 complaintSchema.index({ module: 1, status: 1 });

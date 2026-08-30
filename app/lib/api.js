@@ -57,7 +57,9 @@ async function request(path, options = {}) {
   };
 
   try {
-    const res = await fetch(url, { ...options, headers });
+    const fetchOptions = { ...options, headers };
+    if (!options.method || options.method.toUpperCase() === 'GET') fetchOptions.cache = 'no-store';
+    const res = await fetch(url, fetchOptions);
 
     // Handle token refresh
     if (res.status === 401) {
@@ -66,7 +68,7 @@ async function request(path, options = {}) {
         const refreshed = await refreshAccessToken();
         if (refreshed) {
           headers.Authorization = `Bearer ${accessToken}`;
-          return fetch(url, { ...options, headers }).then(r => r.json());
+          return fetch(url, { ...options, headers, cache: 'no-store' }).then(r => r.json());
         }
       }
       clearToken();

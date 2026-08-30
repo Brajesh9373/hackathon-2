@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateDraft, buildVoiceIntakePayload, extractDraftFromCall } = require('../src/services/voiceIntakeService');
+const { validateDraft, canonicalizeDraftLocation, buildVoiceIntakePayload, extractDraftFromCall, INTAKE_END_PHRASE } = require('../src/services/voiceIntakeService');
 
 test('validates and normalizes a complete structured voice complaint', () => {
   const result = validateDraft({ complaint_text: 'Large pothole near school gate', category: 'POTHOLE', address: 'School Road', ward: '7', urgency: 'high', language: 'English' });
@@ -34,11 +34,24 @@ test('builds an outbound VAPI call with structured extraction and a citizen gree
   assert.match(prompt, /category/);
   assert.match(prompt, /do not ask for urgency/);
   assert.match(prompt, /do not ask for urgency, ward, evidence, phone number/);
+  assert.match(prompt, /after your third answer/i);
+  assert.match(prompt, /end-call action/i);
+  assert.equal(payload.assistantOverrides.endCallMessage, INTAKE_END_PHRASE);
+  assert.deepEqual(payload.assistantOverrides.endCallPhrases, [INTAKE_END_PHRASE]);
   assert.doesNotMatch(prompt, /ask for the issue, category, exact address.*ward if known.*urgency/i);
   const schema = payload.assistantOverrides.analysisPlan.structuredDataPlan.schema;
   assert.deepEqual(Object.keys(schema.properties).sort(), ['address', 'category', 'complaint_text']);
   assert.deepEqual(schema.required.sort(), ['address', 'category', 'complaint_text']);
   assert.equal(schema.additionalProperties, false);
+});
+
+test('canonicalizes every voice draft to the fixed Sanjivani pilot location', () => {
+  const checked = validateDraft({ complaint_text: 'Open drain', category: 'BLOCKED_DRAIN', address: 'A different street' });
+  const canonical = canonicalizeDraftLocation(checked);
+  assert.equal(canonical.valid, true);
+  assert.equal(canonical.draft.location.address, 'Sanjivani University, Kopargaon, Near Shirdi, Ahilyanagar, Maharashtra, 423601');
+  assert.equal(canonical.draft.location.coords.lat, 19.901049081480917);
+  assert.equal(canonical.draft.location.coords.lng, 74.49234387499958);
 });
 
 test('extracts a structured draft from a completed VAPI call response', () => {

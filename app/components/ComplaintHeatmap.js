@@ -1,17 +1,26 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SANJIVANI_LOCATION } from '../lib/civicLocation';
 
-const KOPARGAON_CENTER = [19.885, 74.478];
-const KOPARGAON_BOUNDS = [[19.875, 74.465], [19.9, 74.495]];
+const SANJIVANI_CENTER = [SANJIVANI_LOCATION.coords.lat, SANJIVANI_LOCATION.coords.lng];
+const MAP_BOUNDS = [[SANJIVANI_CENTER[0] - 0.035, SANJIVANI_CENTER[1] - 0.035], [SANJIVANI_CENTER[0] + 0.035, SANJIVANI_CENTER[1] + 0.035]];
 
 function readCoordinates(complaint) {
-  const source = complaint?.location?.coords || complaint?.location || complaint || {};
-  const latitude = Number(source.lat ?? source.latitude);
-  const longitude = Number(source.lng ?? source.lon ?? source.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  if (latitude < 19.7 || latitude > 20.1 || longitude < 74.2 || longitude > 74.8) return null;
-  return { latitude, longitude };
+  const location = complaint?.location || {};
+  const sources = [location.coords, location, complaint];
+  for (const source of sources) {
+    if (!source) continue;
+    const coordinates = Array.isArray(source.coordinates) ? source.coordinates : null;
+    const latitude = Number(coordinates ? coordinates[1] : source.lat ?? source.latitude);
+    const longitude = Number(coordinates ? coordinates[0] : source.lng ?? source.lon ?? source.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+    // Keep the demo map local to Kopargaon. This prevents legacy records from
+    // another city from appearing as a misleading marker on the live map.
+    if (latitude < MAP_BOUNDS[0][0] || latitude > MAP_BOUNDS[1][0] || longitude < MAP_BOUNDS[0][1] || longitude > MAP_BOUNDS[1][1]) continue;
+    return { latitude, longitude };
+  }
+  return null;
 }
 
 function escapeHtml(value) {
@@ -93,7 +102,7 @@ export default function ComplaintHeatmap({ complaints = [] }) {
   const areas = useMemo(() => {
     const grouped = new Map();
     complaints.forEach(complaint => {
-      const label = complaint.location?.ward || complaint.location?.area || complaint.location?.address;
+      const label = complaint.location?.area || complaint.location?.ward || complaint.location?.address;
       if (!label) return;
       const key = String(label).trim();
       const current = grouped.get(key) || { label: key, total: 0, open: 0 };
@@ -108,9 +117,9 @@ export default function ComplaintHeatmap({ complaints = [] }) {
     let cancelled = false;
     loadLeaflet().then(L => {
       if (cancelled || !mapRef.current || mapInstanceRef.current) return;
-      const map = L.map(mapRef.current, { zoomControl: true, attributionControl: true }).setView(KOPARGAON_CENTER, 14);
+      const map = L.map(mapRef.current, { zoomControl: true, attributionControl: true }).setView(SANJIVANI_CENTER, 15);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 18 }).addTo(map);
-      map.setMaxBounds(KOPARGAON_BOUNDS);
+      map.setMaxBounds(MAP_BOUNDS);
       layersRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
       setMapReady(true);
@@ -128,6 +137,10 @@ export default function ComplaintHeatmap({ complaints = [] }) {
     if (!mapReady || !mapInstanceRef.current || !layersRef.current || !window.L) return;
     const L = window.L;
     layersRef.current.clearLayers();
+    const campus = L.circleMarker(SANJIVANI_CENTER, { radius: 11, color: '#ffffff', weight: 3, fillColor: '#087b7b', fillOpacity: 1, bubblingMouseEvents: false });
+    campus.bindTooltip('Sanjivani University', { permanent: true, direction: 'top', opacity: .95, offset: [0, -8] });
+    campus.bindPopup(`<strong>${escapeHtml(SANJIVANI_LOCATION.name)}</strong><br><small>${escapeHtml(SANJIVANI_LOCATION.address)}</small><br><small>Fixed pilot location</small>`);
+    campus.addTo(layersRef.current);
     clusters.forEach(cluster => {
       const color = colorFor(cluster.maxScore);
       const area = L.circle([cluster.latitude, cluster.longitude], { radius: Math.min(260, 90 + cluster.count * 34), color, fillColor: color, fillOpacity: .16, weight: 2 });
@@ -141,7 +154,8 @@ export default function ComplaintHeatmap({ complaints = [] }) {
       marker.on('click', () => setActiveId(String(point.id)));
       marker.addTo(layersRef.current);
     });
-    if (points.length > 1) mapInstanceRef.current.fitBounds(L.latLngBounds(points.map(point => [point.latitude, point.longitude])), { padding: [24, 24], maxZoom: 15 });
+    if (points.length > 1) mapInstanceRef.current.fitBounds(L.latLngBounds(points.map(point => [point.latitude, point.longitude])), { padding: [24, 24], maxZoom: 16 });
+    if (points.length === 1) mapInstanceRef.current.setView([points[0].latitude, points[0].longitude], 16, { animate: false });
   }, [clusters, mapReady, points]);
 
   const focus = point => {
@@ -152,11 +166,11 @@ export default function ComplaintHeatmap({ complaints = [] }) {
   const unmapped = complaints.length - points.length;
 
   return <section className="v-heatmap" aria-label="Live complaint heat map">
-    <div className="v-heatmap-head"><div><span className="v-eyebrow">NETWORK MAP</span><h2>Complaint density</h2><p>Only records with real coordinates are plotted. Nothing is invented when the register is empty.</p></div><span className="v-map-count"><strong>{points.length}</strong> mapped / {complaints.length} total</span></div>
-    <div className="v-heatmap-canvas"><div ref={mapRef} className="v-heatmap-map" aria-label="OpenStreetMap showing complaint density" />{!mapReady && !mapError && <div className="v-map-overlay">Preparing the live map</div>}{mapError && <div className="v-map-overlay is-error">{mapError}</div>}</div>
+    <div className="v-heatmap-head"><div><span className="v-eyebrow">NETWORK MAP</span><h2>Complaint density</h2><p>Live complaints are anchored to Sanjivani University, Kopargaon. The teal campus marker stays visible even when the register is empty.</p></div><span className="v-map-count"><strong>{points.length}</strong> mapped / {complaints.length} total</span></div>
+    <div className="v-heatmap-canvas"><div ref={mapRef} className="v-heatmap-map" aria-label="OpenStreetMap centered on Sanjivani University showing complaint density" />{!mapReady && !mapError && <div className="v-map-overlay">Preparing the live map</div>}{mapError && <div className="v-map-overlay is-error">{mapError}</div>}</div>
     <div className="v-heatmap-meta"><div className="v-map-legend"><span><i className="dot-teal" />Low priority</span><span><i className="dot-amber" />Medium priority</span><span><i className="dot-coral" />High priority</span></div>{unmapped > 0 && <span className="v-map-unmapped">{unmapped} record{unmapped === 1 ? '' : 's'} without coordinates</span>}</div>
     {areas.length > 0 && <div className="v-map-areas">{areas.map(area => <div className="v-map-area" key={area.label}><span>{area.label}</span><strong>{area.total}</strong><small>{area.open} open</small></div>)}</div>}
-    {!complaints.length && <div className="v-map-empty-copy"><strong>No complaint signal yet</strong><span>New citizen submissions will appear here after they include a map location.</span></div>}
+    {!complaints.length && <div className="v-map-empty-copy"><strong>No complaint signal yet</strong><span>Sanjivani University is the fixed pilot location. New submissions will appear here as soon as they are filed.</span></div>}
     {points.length > 0 && <div className="v-map-records">{points.slice(0, 5).map(point => <button type="button" key={point.id} className={`v-map-record ${String(activeId) === String(point.id) ? 'is-active' : ''}`} onClick={() => focus(point)}><span><strong>{point.complaint.complaint_id || 'Complaint'}</strong><small>{point.complaint.location?.address || point.complaint.location?.ward || 'Mapped location'}</small></span><b style={{ color: colorFor(point.score) }}>{point.score || 0}</b></button>)}</div>}
   </section>;
 }

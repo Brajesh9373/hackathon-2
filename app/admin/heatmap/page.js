@@ -20,5 +20,5 @@ export default function AdminHeatmapPage() {
     }).catch(() => setError('Could not load the complaint map.')).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
-  return <PortalShell role="admin"><PageIntro eyebrow="NETWORK MAP" title="See where demand is gathering." detail="Density, priority and ownership are calculated from the live complaint register. The map never fills empty wards with sample data." action={<button className="v-button v-button-ghost" onClick={load}>Refresh map</button>} />{error && <p className="v-form-error">{error}</p>}{loading ? <div className="v-loading" style={{ minHeight: 420 }}><div className="v-loading-mark">N</div><p>Preparing the live map</p></div> : <ComplaintHeatmap complaints={items} />}</PortalShell>;
+  return <PortalShell role="admin"><PageIntro eyebrow="NETWORK MAP" title="See where demand is gathering." detail="Density, priority and ownership come from the live complaint register. This pilot keeps every complaint at Sanjivani University, Kopargaon." action={<button className="v-button v-button-ghost" onClick={load}>Refresh map</button>} />{error && <p className="v-form-error">{error}</p>}{loading ? <div className="v-loading" style={{ minHeight: 420 }}><div className="v-loading-mark">N</div><p>Preparing the live map</p></div> : <ComplaintHeatmap complaints={items} />}</PortalShell>;
 }

@@ -1,7 +1,7 @@
 const VoiceIntakeSession = require('../models/VoiceIntakeSession');
 const Complaint = require('../models/Complaint');
 const { createCaseOfficer } = require('../services/complaintAgent');
-const { startVoiceIntake, pollVoiceIntake, validateDraft } = require('../services/voiceIntakeService');
+const { startVoiceIntake, pollVoiceIntake, validateDraft, canonicalizeDraftLocation } = require('../services/voiceIntakeService');
 const { assessIntegrity, fingerprintClaim } = require('../services/misinformationService');
 const { appendLedgerEvent } = require('../services/recoveryLedgerService');
 const { calculatePriority, getModuleFromCategory } = require('../services/priorityEngine');
@@ -61,7 +61,7 @@ exports.result = async (req, res) => {
   if (process.env.CIVIC_CALLBACK_TOKEN && (req.headers['x-civic-callback-token'] || req.query.token) !== process.env.CIVIC_CALLBACK_TOKEN) return res.status(401).json({ error: 'Invalid callback token' });
   const session = await VoiceIntakeSession.findById(req.params.id);
   if (!session) return res.status(404).json({ error: 'Intake session not found' });
-  const checked = validateDraft(req.body?.draft || req.body?.message?.analysis?.structuredData || req.body || {});
+  const checked = canonicalizeDraftLocation(validateDraft(req.body?.draft || req.body?.message?.analysis?.structuredData || req.body || {}));
   session.draft = checked.draft;
   session.missing_fields = checked.missingFields;
   session.transcript = req.body?.transcript || req.body?.message?.artifact?.transcript || '';
@@ -83,7 +83,7 @@ exports.poll = async (req, res) => {
   try {
     const result = await pollVoiceIntake(session.call_id);
     if (result.status === 'ended') {
-      const checked = validateDraft(result.draft);
+      const checked = canonicalizeDraftLocation(validateDraft(result.draft));
       session.draft = checked.draft;
       session.missing_fields = checked.missingFields;
       session.transcript = result.transcript;
@@ -98,7 +98,7 @@ exports.confirm = async (req, res) => {
   const session = await VoiceIntakeSession.findOne({ _id: req.params.id, citizen_id: req.user._id });
   if (!session) return res.status(404).json({ error: 'Intake session not found' });
   if (session.status === 'CONFIRMED' && session.confirmed_complaint_id) return res.json({ success: true, complaint_id: session.draft?.complaint_id, complaint: await Complaint.findById(session.confirmed_complaint_id) });
-  const checked = validateDraft({ ...(session.draft || {}), ...(req.body?.edits || {}) });
+  const checked = canonicalizeDraftLocation(validateDraft({ ...(session.draft || {}), ...(req.body?.edits || {}) }));
   if (!checked.valid) return res.status(400).json({ error: 'Complete the missing voice details before confirmation.', missingFields: checked.missingFields });
   const matching = await Complaint.find({
     'integrity_assessment.fingerprint': fingerprintClaim(checked.draft.complaint_text),
