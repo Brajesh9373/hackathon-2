@@ -56,3 +56,4 @@ yarn-error.log*
 
 # Local Graphify navigation artifacts
 graphify-out/
+.worktrees/
