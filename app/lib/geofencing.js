@@ -6,6 +6,12 @@
  * promise and gives every caller the same fail-closed contract.
  */
 import Radar from 'radar-sdk-js';
+import {
+  SEARCH_RADIUS_METERS,
+  MAX_LOCATION_ACCURACY_METERS,
+  filterRestrictedPlaces,
+  isLocationAccurateEnough,
+} from './radarSafetyLogic.mjs';
 
 export const RESTRICTED_PLACE_TYPES = {
   hospital: 'Hospital',
@@ -23,7 +29,6 @@ export const RESTRICTED_PLACE_TYPES = {
 };
 
 export const KOPARGAON_CENTER = { latitude: 19.8850, longitude: 74.4780 };
-const SEARCH_RADIUS_METERS = 200;
 // Radar's places endpoint requires at least one filter. Keep the query scoped
 // to the sensitive place categories we actually use for call safety, rather
 // than requesting an unfiltered (and rejected) nearby-place search.
@@ -71,18 +76,6 @@ export function initRadar() {
 
 export function isRadarInitialized() { return radarInitialized; }
 
-function getPlaceTokens(place) {
-  const categories = Array.isArray(place?.categories) ? place.categories : [];
-  return categories.flatMap(category => typeof category === 'string'
-    ? [category]
-    : [category?.id, category?.name]).filter(Boolean).map(value => String(value).toLowerCase());
-}
-
-function restrictedPlace(place) {
-  const tokens = [...getPlaceTokens(place), String(place?.name || '').toLowerCase()];
-  return Object.keys(RESTRICTED_PLACE_TYPES).find(type => tokens.some(token => token.includes(type) || (type === 'fire_station' && token.includes('fire'))));
-}
-
 function blocked(reason, extra = {}) {
   return { canCall: false, reason, nearbyPlaces: [], ...extra };
 }
@@ -92,10 +85,21 @@ export async function checkCoordinatesForCalling(coordinates) {
   if (!coordinates || !Number.isFinite(Number(coordinates.latitude)) || !Number.isFinite(Number(coordinates.longitude))) {
     return blocked('Citizen location is missing, so the automated call is held.');
   }
+  if (Number(coordinates.latitude) < -90 || Number(coordinates.latitude) > 90 || Number(coordinates.longitude) < -180 || Number(coordinates.longitude) > 180) {
+    return blocked('Citizen location is invalid, so the automated call is held.');
+  }
   if (!radarInitialized && !initRadar()) {
     return blocked('Radar safety verification is not configured, so the automated call is held.');
   }
-  const userLocation = { latitude: Number(coordinates.latitude), longitude: Number(coordinates.longitude) };
+  const accuracy = Number.isFinite(Number(coordinates.accuracy)) ? Number(coordinates.accuracy) : undefined;
+  const userLocation = { latitude: Number(coordinates.latitude), longitude: Number(coordinates.longitude), ...(accuracy === undefined ? {} : { accuracy }) };
+  if (!isLocationAccurateEnough(accuracy)) {
+    return blocked(`Location accuracy is ${Math.round(accuracy)}m, so Radar cannot safely determine whether a restricted facility is nearby.`, {
+      userLocation,
+      accuracyMeters: accuracy,
+      maxAccuracyMeters: MAX_LOCATION_ACCURACY_METERS,
+    });
+  }
   try {
     const placesResult = await radarCall('searchPlaces', {
       near: userLocation,
@@ -104,13 +108,15 @@ export async function checkCoordinatesForCalling(coordinates) {
       limit: 20,
     });
     const places = Array.isArray(placesResult.places) ? placesResult.places : [];
-    const restricted = places.filter(place => restrictedPlace(place));
+    const restricted = filterRestrictedPlaces(places, userLocation, SEARCH_RADIUS_METERS);
     if (restricted.length) {
       const place = restricted[0];
-      return blocked(`Citizen is near ${place.name || RESTRICTED_PLACE_TYPES[restrictedPlace(place)]}; automated call skipped.`, {
+      const typeLabel = RESTRICTED_PLACE_TYPES[place.type] || 'restricted facility';
+      return blocked(`Citizen is within ${place.distanceMeters}m of ${place.name || typeLabel}; automated call skipped.`, {
         nearbyPlaces: restricted,
         userLocation,
-        restrictedPlace: place.name || RESTRICTED_PLACE_TYPES[restrictedPlace(place)],
+        restrictedPlace: place.name || typeLabel,
+        distanceMeters: place.distanceMeters,
       });
     }
     return { canCall: true, reason: 'Citizen location verified; no restricted place nearby.', nearbyPlaces: places.slice(0, 5), userLocation };
@@ -129,7 +135,11 @@ export async function checkLocationForCalling() {
     const tracked = await radarCall('trackOnce');
     const location = tracked.location || {};
     const coordinates = location.coordinates || location;
-    return checkCoordinatesForCalling({ latitude: coordinates.latitude, longitude: coordinates.longitude });
+    return checkCoordinatesForCalling({
+      latitude: coordinates.latitude ?? coordinates.lat,
+      longitude: coordinates.longitude ?? coordinates.lon ?? coordinates.lng,
+      accuracy: coordinates.accuracy ?? location.accuracy,
+    });
   } catch (error) {
     console.error('Radar location check failed:', error);
     return blocked('Could not verify the current location, so the automated call is held.', { error: error.message });

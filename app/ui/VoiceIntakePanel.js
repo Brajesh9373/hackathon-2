@@ -14,7 +14,7 @@ export default function VoiceIntakePanel({ onConfirmed }) {
     setError(''); setState('starting');
     if (!navigator.geolocation) return setError('Location access is needed to make a safe automated call.');
     navigator.geolocation.getCurrentPosition(async position => {
-      const safety = await checkCoordinatesForCalling({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+      const safety = await checkCoordinatesForCalling({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy });
       setLocation(safety);
       if (!safety.canCall) { setState('idle'); return setError(safety.reason); }
       const result = await voiceIntake.start(safety);
