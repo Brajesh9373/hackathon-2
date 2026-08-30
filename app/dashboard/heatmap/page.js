@@ -18,17 +18,7 @@ export default function HeatmapPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
-  useEffect(() => {
-    const stored = getStoredUser();
-    if (!stored) {
-      router.push('/');
-      return;
-    }
-    setUser(stored);
-    fetchComplaints();
-  }, []);
-
-  const fetchComplaints = async () => {
+  async function fetchComplaints() {
     try {
       const res = await fetch('/api/complaints');
       const data = await res.json();
@@ -37,7 +27,17 @@ export default function HeatmapPage() {
       console.error('Failed to fetch complaints:', err);
     }
     setLoading(false);
-  };
+  }
+
+  useEffect(() => {
+    const stored = getStoredUser();
+    if (!stored) {
+      router.push('/');
+      return;
+    }
+    setUser(stored);
+    void fetchComplaints();
+  }, []);
 
   const handleLogout = () => {
     clearToken();

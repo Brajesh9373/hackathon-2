@@ -87,7 +87,7 @@ export default function CriticalAlertsPage() {
       <div className="page-header">
         <div className="page-title">
           <h1>🚨 DEFCON Alert Center</h1>
-          <span className="page-title-hi">डेफकॉन अलर्ट केंद्र — तत्काल कार्रवाई आवश्यक</span>
+          <span className="page-title-hi">डेफकॉन अलर्ट केंद्र - तत्काल कार्रवाई आवश्यक</span>
         </div>
       </div>
 

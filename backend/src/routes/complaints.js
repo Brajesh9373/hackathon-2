@@ -14,9 +14,6 @@ router.get('/my', c.myComplaints);
 router.get('/', c.listComplaints);
 router.get('/duplicate-check', c.duplicateCheck);
 
-// Detail
-router.get('/:id', c.getComplaint);
-
 // Timeline
 router.post('/:id/timeline', c.addTimeline);
 
@@ -41,5 +38,9 @@ router.post('/:id/follow-up', c.requestFollowUp);
 // Admin only
 router.get('/admin/users', c.getSupervisors);
 router.get('/admin/stats', c.dashboardStats);
+
+// Detail (keep this after all named collection routes so paths such as
+// /supervisor/queue and /worker/tasks are not mistaken for complaint IDs.)
+router.get('/:id', c.getComplaint);
 
 module.exports = router;

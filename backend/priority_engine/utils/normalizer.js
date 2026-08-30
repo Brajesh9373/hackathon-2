@@ -147,7 +147,8 @@ class DataNormalizer {
         nearby_complaints: this.normalizeNearbyComplaints(issue.nearby_complaints),
         has_gps: this.normalizeGPS(issue.location),
         has_photo: issue.photo_available ? 1.0 : 0.0,
-        is_repeat: issue.is_repeat_location ? 1.0 : 0.0
+        is_repeat: issue.is_repeat_location ? 1.0 : 0.0,
+        emergency_signal: issue.emergency_signal ? 1.0 : 0.0
       },
       
       // Raw values for reference
@@ -157,7 +158,8 @@ class DataNormalizer {
         citizen_reports: issue.citizen_reports,
         weather: issue.weather_condition,
         facilities: issue.near_facilities,
-        nearby_complaints: issue.nearby_complaints
+        nearby_complaints: issue.nearby_complaints,
+        emergency_reason: issue.emergency_reason || null
       }
     };
   }

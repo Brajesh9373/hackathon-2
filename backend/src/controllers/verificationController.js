@@ -111,7 +111,7 @@ async function notifyMakeWebhook(complaintId, data) {
 // Start verification call
 exports.startVerification = async (req, res) => {
   try {
-    const { complaintId, citizenPhone, title, location, completionNotes, evidence } = req.body;
+    const { complaintId, citizenPhone, title, location, completionNotes, evidence, geofence } = req.body;
     
     if (!complaintId || !citizenPhone) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -121,6 +121,12 @@ exports.startVerification = async (req, res) => {
     const complaint = await Complaint.findOne({ complaint_id: complaintId });
     if (!complaint) {
       return res.status(404).json({ error: 'Complaint not found' });
+    }
+    if (req.user.role === 'worker' && String(complaint.assigned_worker_id) !== String(req.user._id)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (req.user.role === 'supervisor' && String(complaint.assigned_supervisor_id) !== String(req.user._id)) {
+      return res.status(403).json({ error: 'Access denied' });
     }
     
     // Normalize phone
@@ -147,6 +153,19 @@ exports.startVerification = async (req, res) => {
       location
     };
     saveVerificationState(state);
+
+    // Never start an automated call without an explicit citizen-location pass.
+    // The browser performs the Radar check and sends only its boolean decision.
+    if (!geofence || geofence.canCall !== true) {
+      const reason = geofence?.reason || 'Citizen location was not verified';
+      complaint.verification.status = 'pending';
+      complaint.verification.evidence = `Automated call held: ${reason}`;
+      await complaint.save();
+      state[complaintId].status = 'pending';
+      state[complaintId].blockedReason = reason;
+      saveVerificationState(state);
+      return res.status(202).json({ ok: true, provider: 'blocked', callId: null, blocked: true, reason });
+    }
     
     // Try Make webhook first if configured
     const makeResult = await notifyMakeWebhook(complaintId, {
@@ -202,9 +221,15 @@ exports.startVerification = async (req, res) => {
       const error = await vapiResponse.text();
       console.error('Vapi error:', error);
       
-      // Revert status
-      complaint.status = 'COMPLETED';
-      complaint.verification = { status: 'pending' };
+      // A failed call must never look like a confirmed resolution. Keep the
+      // record in the verification queue so it can be retried or handled
+      // manually by a supervisor.
+      complaint.status = 'AWAITING_VERIFICATION';
+      complaint.verification = {
+        status: 'pending',
+        initiated_at: complaint.verification?.initiated_at || new Date(),
+        evidence: 'Automated verification call could not be started.'
+      };
       await complaint.save();
       
       return res.status(500).json({ error: 'Failed to initiate call', details: error });
@@ -237,17 +262,24 @@ exports.getVerification = async (req, res) => {
   try {
     const { complaintId } = req.params;
     
-    // Check saved state first
+    // Validate the database record before consulting the local state file;
+    // otherwise deleted QA complaints can appear to have a live call forever.
+    const complaint = await Complaint.findOne({ complaint_id: complaintId });
+    if (!complaint) return res.status(404).json({ error: 'Complaint not found' });
+    if (req.user.role === 'citizen' && String(complaint.citizen_id) !== String(req.user._id)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (req.user.role === 'worker' && String(complaint.assigned_worker_id) !== String(req.user._id)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (req.user.role === 'supervisor' && String(complaint.assigned_supervisor_id) !== String(req.user._id)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     const state = loadVerificationState();
     const saved = state[complaintId];
     
     if (!saved) {
-      // Check database
-      const complaint = await Complaint.findOne({ complaint_id: complaintId });
-      if (!complaint) {
-        return res.status(404).json({ error: 'Complaint not found' });
-      }
-      
       if (complaint.verification && complaint.verification.status) {
         return res.json({
           decision: complaint.verification.status === 'calling' ? 'pending' : complaint.verification.status,
@@ -275,43 +307,16 @@ exports.getVerification = async (req, res) => {
           // Check if call is completed (Vapi returns 'ended' with endedReason)
           if ((callData.status === 'ended' || callData.status === 'completed') && callData.endedReason) {
             console.log('Processing call completion, transcript:', (callData.transcript || '').substring(0, 200));
-            const decision = classifyAnswer(callData.transcript || '');
-            
-            // Update state
+            // Use the same classifier and state transition as the external
+            // Make callback so polling cannot disagree with webhook results.
+            const decision = await processVerificationResult(complaintId, {
+              decision: classifyAnswer(callData.transcript || ''),
+              transcript: callData.transcript || ''
+            });
             saved.status = decision;
             saved.completedAt = new Date().toISOString();
             saved.transcript = callData.transcript;
             saveVerificationState(state);
-            
-            // Update complaint
-            const complaint = await Complaint.findOne({ complaint_id: complaintId });
-            if (complaint) {
-              complaint.verification.status = decision;
-              complaint.verification.completed_at = new Date();
-              complaint.verification.transcript = callData.transcript;
-              
-              if (decision === 'confirmed') {
-                complaint.status = 'COMPLETED';
-                complaint.citizen_confirmation = {
-                  response: 'CONFIRMED',
-                  confirmed_at: new Date()
-                };
-              } else {
-                complaint.status = 'ASSIGNED'; // Return to supervisor
-                complaint.citizen_confirmation = {
-                  response: 'NOT_FIXED',
-                  responded_at: new Date()
-                };
-                // Add follow-up
-                complaint.follow_up_requests.push({
-                  reason: 'INCOMPLETE',
-                  citizen_note: 'Citizen reported work not completed via phone verification',
-                  requested_at: new Date(),
-                  status: 'PENDING'
-                });
-              }
-              await complaint.save();
-            }
             
             return res.json({
               decision,
@@ -358,45 +363,16 @@ exports.receiveResult = async (req, res) => {
       return res.status(400).json({ error: 'Invalid decision' });
     }
     
-    // Update state
+    const resolvedDecision = await processVerificationResult(complaintId, { decision, transcript: transcript || '' });
     const state = loadVerificationState();
     if (state[complaintId]) {
-      state[complaintId].status = decision;
+      state[complaintId].status = resolvedDecision;
       state[complaintId].completedAt = new Date().toISOString();
       state[complaintId].transcript = transcript;
       saveVerificationState(state);
     }
     
-    // Update complaint
-    const complaint = await Complaint.findOne({ complaint_id: complaintId });
-    if (complaint) {
-      complaint.verification.status = decision;
-      complaint.verification.completed_at = new Date();
-      complaint.verification.transcript = transcript;
-      
-      if (decision === 'confirmed') {
-        complaint.status = 'COMPLETED';
-        complaint.citizen_confirmation = {
-          response: 'CONFIRMED',
-          confirmed_at: new Date()
-        };
-      } else {
-        complaint.status = 'ASSIGNED';
-        complaint.citizen_confirmation = {
-          response: 'NOT_FIXED',
-          responded_at: new Date()
-        };
-        complaint.follow_up_requests.push({
-          reason: 'INCOMPLETE',
-          citizen_note: 'Citizen reported work not completed',
-          requested_at: new Date(),
-          status: 'PENDING'
-        });
-      }
-      await complaint.save();
-    }
-    
-    return res.json({ ok: true });
+    return res.json({ ok: true, decision: resolvedDecision });
     
   } catch (error) {
     console.error('Receive result error:', error);

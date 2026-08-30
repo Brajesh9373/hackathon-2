@@ -29,11 +29,11 @@ async function sendSMS(to, message) {
 }
 
 async function sendOTP(mobile, otp) {
-  return sendSMS(mobile, `Your VAANI verification code is: ${otp}. Valid for 10 minutes. Do not share this code.\n\nआपका VAANI सत्यापन कोड है: ${otp}`);
+  return sendSMS(mobile, `Your NagarSetu verification code is: ${otp}. Valid for 10 minutes. Do not share this code.\n\nआपका NagarSetu सत्यापन कोड है: ${otp}`);
 }
 
 async function sendComplaintConfirmation(mobile, complaintId) {
-  return sendSMS(mobile, `Your complaint ${complaintId} has been registered successfully on VAANI. Track status at: vaani.delhi.gov.in/track/${complaintId}\n\nआपकी शिकायत ${complaintId} सफलतापूर्वक दर्ज हो गई है।`);
+  return sendSMS(mobile, `Your complaint ${complaintId} has been registered successfully on NagarSetu. Track status in your NagarSetu workspace.\n\nआपकी शिकायत ${complaintId} सफलतापूर्वक दर्ज हो गई है।`);
 }
 
 async function sendCitizenVerification(mobile, complaintId, officerName) {
@@ -41,7 +41,7 @@ async function sendCitizenVerification(mobile, complaintId, officerName) {
 }
 
 async function sendDefconAlert(mobile, complaintId, priority, location) {
-  return sendSMS(mobile, `🚨 DEFCON ${priority} ALERT — VAANI\nComplaint: ${complaintId}\nLocation: ${location}\nIMMediate action required!\n\n🚨 ${priority} अलर्ट — तत्काल कार्रवाई आवश्यक!`);
+  return sendSMS(mobile, `Priority ${priority} alert from NagarSetu.\nComplaint: ${complaintId}\nLocation: ${location}\nImmediate action required.`);
 }
 
 async function sendSLABreachAlert(mobile, complaintId) {

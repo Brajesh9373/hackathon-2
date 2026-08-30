@@ -161,6 +161,14 @@ class OrToolsSolver {
 
         let stdout = '';
         let stderr = '';
+        let timeoutId;
+        let settled = false;
+        const finish = (result) => {
+          if (settled) return;
+          settled = true;
+          if (timeoutId) clearTimeout(timeoutId);
+          resolve(result);
+        };
 
         python.stdout.on('data', (data) => {
           stdout += data.toString();
@@ -174,13 +182,13 @@ class OrToolsSolver {
           if (code === 0 && stdout) {
             try {
               const result = JSON.parse(stdout);
-              resolve({
+              finish({
                 ...result,
                 solver: 'OR_TOOLS',
                 fallback: null
               });
             } catch (e) {
-              resolve({
+              finish({
                 error: true,
                 message: 'Failed to parse OR-Tools output',
                 details: stdout,
@@ -189,7 +197,7 @@ class OrToolsSolver {
               });
             }
           } else {
-            resolve({
+            finish({
               error: true,
               message: 'OR-Tools solver failed',
               details: stderr || stdout,
@@ -200,7 +208,7 @@ class OrToolsSolver {
         });
 
         python.on('error', (err) => {
-          resolve({
+          finish({
             error: true,
             message: `Failed to start OR-Tools: ${err.message}`,
             solver: 'OR_TOOLS',
@@ -213,9 +221,9 @@ class OrToolsSolver {
         python.stdin.end();
 
         // Timeout after 30 seconds
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           python.kill();
-          resolve({
+          finish({
             error: true,
             message: 'OR-Tools solver timed out',
             solver: 'OR_TOOLS',

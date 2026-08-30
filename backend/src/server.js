@@ -33,17 +33,20 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/complaints', require('./routes/complaints'));
+app.use('/api/agents', require('./routes/agents'));
 app.use('/api', require('./routes/api'));
 app.use('/api/priority', require('../priority_engine/index'));
 app.use('/api/civic', require('./routes/priority')); // Kopargaon Civic Platform integration
 app.use('/api/verification', require('./routes/verification')); // AI Verification
+app.use('/api/voice-intake', require('./routes/voiceIntake'));
+app.use('/api/recovery', require('./routes/recovery'));
 app.use('/mock', require('./routes/mock'));
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    name: 'VAANI Backend',
+    name: 'NagarSetu Backend',
     version: '1.0.0',
     demo_mode: process.env.DEMO_MODE === 'true',
     timestamp: new Date().toISOString(),
@@ -63,7 +66,7 @@ connectDB().then(() => {
   server.listen(PORT, () => {
     console.log(`
 ╔══════════════════════════════════════════════════╗
-║          VAANI — Backend Server Started          ║
+║       NagarSetu Backend Server Started           ║
 ║   Vigilant Administration & Accountability       ║
 ║        Network Intelligence                      ║
 ╠══════════════════════════════════════════════════╣

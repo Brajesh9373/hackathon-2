@@ -1,5 +1,5 @@
 /**
- * VAANI Smart Jurisdiction Router — Keyword NLP Classifier
+ * NagarSetu jurisdiction router and keyword classifier
  * Input: complaint_text + GPS + category_hint
  * Output: department_code + confidence_score + assigned_officer
  */
@@ -182,13 +182,13 @@ async function findBestOfficer(departmentCode, district) {
 }
 
 /**
- * Generate unique complaint ID: VAANI-YYYYMMDD-XXXXX
+ * Generate unique complaint ID: KCP-YYYYMMDD-XXXXX
  */
 function generateComplaintId() {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
   const rand = String(Math.floor(10000 + Math.random() * 90000));
-  return `VAANI-${dateStr}-${rand}`;
+  return `KCP-${dateStr}-${rand}`;
 }
 
 module.exports = {

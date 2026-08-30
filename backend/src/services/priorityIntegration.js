@@ -1,7 +1,7 @@
 /**
  * Priority Engine Integration Service
  * 
- * Bridges VAANI complaint model with the Kopargaon Priority Engine
+ * Bridges the NagarSetu complaint model with the Kopargaon Priority Engine
  * 
  * Converts complaint data to priority engine format, calls the engine,
  * and stores results back into the complaint model.
@@ -25,36 +25,71 @@ const DEFAULT_RESOURCES = {
   budget_available: 100000
 };
 
+const EMERGENCY_PATTERNS = [
+  { pattern: /\b(?:baby|infant|child|minor|person)\b[\s\S]{0,28}\b(?:missing|lost|abduct|kidnap(?:ped|ping)?)\b/i, reason: 'Missing-person report involving a child or vulnerable person' },
+  { pattern: /\b(?:missing|lost|abduct|kidnap(?:ped|ping)?)\b[\s\S]{0,28}\b(?:baby|infant|child|minor|person)\b/i, reason: 'Missing-person report involving a child or vulnerable person' },
+  { pattern: /\b(?:kidnap(?:ped|ping)?|abduction|hostage|child\s+trafficking)\b/i, reason: 'Possible abduction or immediate public-safety threat' },
+  { pattern: /\b(?:fire|explosion|gas\s+leak|live\s+wire|electrocut(?:ed|ion)|building\s+collapse)\b/i, reason: 'Immediate life-safety hazard reported' },
+  { pattern: /\b(?:not\s+breathing|unconscious|heart\s+attack|medical\s+emergency|critical\s+patient)\b/i, reason: 'Medical emergency reported' },
+  { pattern: /\b(?:assault|violence|rape|robbery\s+in\s+progress|crime\s+in\s+progress)\b/i, reason: 'Immediate personal-safety threat reported' },
+];
+
+function detectEmergencySignal(text) {
+  const value = String(text || '').trim();
+  return EMERGENCY_PATTERNS.find(({ pattern }) => pattern.test(value)) || null;
+}
+
+// Complaint forms store severity on a 1–10 civic scale while the decision
+// engine intentionally accepts a 1–5 normalized scale. Convert explicitly;
+// silently clamping every value above 5 made ordinary and urgent complaints
+// indistinguishable.
+function mapSeverityToEngine(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 3;
+  return Math.max(1, Math.min(5, 1 + ((numeric - 1) / 9) * 4));
+}
+
 /**
- * Convert VAANI complaint to priority engine format
+ * Convert NagarSetu complaints to priority-engine input
  */
 function complaintToIssue(complaint) {
   const impact = complaint.impact_factors || {};
+  const emergency = detectEmergencySignal(complaint.complaint_text);
+  const weatherRisk = impact.weather_risk;
+  const weatherCondition = typeof weatherRisk === 'string'
+    ? weatherRisk
+    : Number(weatherRisk) >= 9 ? 'storm'
+      : Number(weatherRisk) >= 7 ? 'heavy_rain'
+        : Number(weatherRisk) >= 5 ? 'rainy' : 'clear';
+  const coords = complaint.location?.coords;
   
   return {
     issue_id: complaint.complaint_id,
-    type: mapCategoryToType(complaint.category),
+    type: emergency ? 'public_safety_emergency' : mapCategoryToType(complaint.category),
     domain: complaint.module === 'WASTE' ? 'waste' : 'infrastructure',
     
     // Raw features
     reported_at: complaint.createdAt?.toISOString() || new Date().toISOString(),
-    severity: impact.severity || 5,
-    weather_condition: impact.weather_risk || 5,
-    population_exposed: mapImpactToPopulation(impact.public_impact),
-    near_facilities: extractFacilities(complaint),
+    severity: emergency ? 5 : mapSeverityToEngine(impact.severity),
+    weather_condition: weatherCondition,
+    population_exposed: emergency ? 'very_high' : mapImpactToPopulation(impact.public_impact),
+    near_facilities: [...extractFacilities(complaint), ...(emergency ? ['police'] : [])],
+    ward: complaint.location?.ward,
     
     // Evidence
     citizen_reports: impact.repeat_count || 1,
     photo_available: (complaint.media_urls?.length || 0) > 0,
-    location: complaint.location?.coords,
+    location: coords ? { lat: coords.lat, lon: coords.lng ?? coords.lon } : undefined,
     
     // Special flags
-    is_repeat_location: (impact.repeat_count || 0) > 0
+    is_repeat_location: (impact.repeat_count || 0) > 0,
+    emergency_signal: Boolean(emergency),
+    emergency_reason: emergency?.reason || null
   };
 }
 
 /**
- * Map VAANI category to priority engine type
+ * Map NagarSetu categories to priority-engine types
  */
 function mapCategoryToType(category) {
   const mapping = {
@@ -111,6 +146,18 @@ function extractFacilities(complaint) {
 async function evaluateComplaint(complaint, resources = DEFAULT_RESOURCES) {
   const issue = complaintToIssue(complaint);
   const result = PriorityEngine.evaluate(issue, resources);
+  let explanation = result.error
+    ? { summary: result.message || 'Priority evaluation failed.', factors: [] }
+    : (result.explanation || PriorityEngine.generateExplanation(result, 1, 1));
+
+  if (issue.emergency_signal && !result.error) {
+    explanation = {
+      ...explanation,
+      summary: `Critical safety signal: ${issue.emergency_reason}. Treat this complaint as an immediate escalation.`,
+      factors: [issue.emergency_reason, ...(explanation.factors || [])],
+      recommendation: 'Escalate immediately and verify with the appropriate emergency authority.'
+    };
+  }
   
   return {
     complaint_id: complaint.complaint_id,
@@ -131,7 +178,7 @@ async function evaluateComplaint(complaint, resources = DEFAULT_RESOURCES) {
     decision: result.decision,
     
     // Explanation
-    explanation: result.explanation
+    explanation
   };
 }
 
@@ -261,11 +308,11 @@ function getFactorInfo() {
       context: { weight: 0.15, description: 'Current circumstances' }
     },
     bands: {
-      CRITICAL: { min: 90, max: 100, action: 'ACT immediately' },
-      HIGH: { min: 75, max: 89, action: 'ACT soon' },
-      MEDIUM: { min: 50, max: 74, action: 'SCHEDULE' },
-      LOW: { min: 25, max: 49, action: 'MONITOR' },
-      MINIMAL: { min: 0, max: 24, action: 'DEFER' }
+      CRITICAL: { min: 75, max: 100, action: 'ACT immediately' },
+      HIGH: { min: 55, max: 74, action: 'ACT soon' },
+      MEDIUM: { min: 35, max: 54, action: 'SCHEDULE' },
+      LOW: { min: 15, max: 34, action: 'MONITOR' },
+      MINIMAL: { min: 0, max: 14, action: 'DEFER' }
     },
     confidence_levels: {
       HIGH: '≥70% evidence strength',

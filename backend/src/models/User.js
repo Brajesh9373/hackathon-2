@@ -72,7 +72,6 @@ const userSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Indexes
-userSchema.index({ mobile: 1 }, { unique: true });
 userSchema.index({ role: 1 });
 userSchema.index({ supervisor_id: 1 });
 

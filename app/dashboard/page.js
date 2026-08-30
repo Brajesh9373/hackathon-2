@@ -40,20 +40,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [optimizing, setOptimizing] = useState(false);
 
-  useEffect(() => {
-    const stored = getStoredUser();
-    if (!stored) {
-      router.push('/');
-      return;
-    }
-    setUser(stored);
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  async function fetchData() {
     setLoading(true);
     try {
-      const token = localStorage.getItem('vaani_token');
+      const token = localStorage.getItem('nagarsetu_token');
       const headers = { 'Authorization': `Bearer ${token}` };
       
       const statsRes = await fetch(`${API_BASE}/complaints/admin/stats`, { headers });
@@ -67,12 +57,22 @@ export default function Dashboard() {
       console.error('Failed to fetch data:', err);
     }
     setLoading(false);
-  };
+  }
+
+  useEffect(() => {
+    const stored = getStoredUser();
+    if (!stored) {
+      router.push('/');
+      return;
+    }
+    setUser(stored);
+    void fetchData();
+  }, []);
 
   const runOptimization = async () => {
     setOptimizing(true);
     try {
-      const token = localStorage.getItem('vaani_token');
+      const token = localStorage.getItem('nagarsetu_token');
       const headers = { 
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'

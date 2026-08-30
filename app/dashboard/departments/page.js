@@ -55,14 +55,14 @@ export default function DepartmentsPage() {
       <div className="page-header">
         <div className="page-title">
           <h1>🏢 Departments</h1>
-          <span className="page-title-hi">विभाग — {deptData.length} विभाग</span>
+          <span className="page-title-hi">विभाग - {deptData.length} विभाग</span>
         </div>
       </div>
 
       {isDemoMode && (
         <div className="alert-banner alert-banner-info" style={{ marginBottom: 'var(--space-6)' }}>
           <span className="alert-banner-icon">ℹ️</span>
-          Showing offline demo data — backend connection unavailable.
+          Showing offline demo data - backend connection unavailable.
         </div>
       )}
 

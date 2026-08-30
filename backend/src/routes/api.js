@@ -10,17 +10,15 @@ const DistrictWard = require('../models/DistrictWard');
 // === ANALYTICS ROUTES ===
 
 // Dashboard KPIs
-router.get('/dashboard', auth, authorize('cm', 'cm_staff', 'district_officer', 'department_manager', 'nodal_officer', 'commissioner', 'super_admin'), async (req, res) => {
+router.get('/dashboard', auth, authorize('admin', 'supervisor'), async (req, res) => {
   try {
     const today = new Date(); today.setHours(0,0,0,0);
     const filter = {};
     switch (req.user.role) {
-      case 'department_manager':
-      case 'nodal_officer':
-      case 'commissioner':
+      case 'admin':
         if (req.user.department) filter.department_id = req.user.department;
         break;
-      case 'district_officer':
+      case 'supervisor':
         if (req.user.district) filter['location.district'] = req.user.district.toLowerCase().replace(/\s+/g, '_');
         break;
     }
@@ -37,7 +35,7 @@ router.get('/dashboard', auth, authorize('cm', 'cm_staff', 'district_officer', '
       Complaint.countDocuments({ ...filter, sla_breached: true }),
     ]);
 
-    const slaCompliance = total > 0 ? Math.round(((total - totalSlaBreached) / total) * 100) : 100;
+    const slaCompliance = total > 0 ? Math.round(((total - totalSlaBreached) / total) * 100) : 0;
 
     res.json({
       total, todayFiled, todayResolved, pending,
@@ -234,7 +232,7 @@ router.get('/analytics/detailed', auth, async (req, res) => {
     const disputedCount = allComplaints.filter(c => c.status === 'DISPUTED').length;
 
     const onTimeResolved = resolvedComplaints.filter(c => !c.sla_breached).length;
-    const slaCompliance = resolvedCount > 0 ? Math.round((onTimeResolved / resolvedCount) * 100) : 100;
+    const slaCompliance = resolvedCount > 0 ? Math.round((onTimeResolved / resolvedCount) * 100) : 0;
     const falseClosure = resolvedCount > 0 ? Math.round((disputedCount / resolvedCount) * 100) : 0;
 
     // Calculate Average Resolution Time
@@ -250,7 +248,7 @@ router.get('/analytics/detailed', auth, async (req, res) => {
         }
       }
     });
-    const avgResolutionDays = countWithTime > 0 ? parseFloat((totalResolutionMs / (1000 * 60 * 60 * 24 * countWithTime)).toFixed(1)) : 4.2;
+    const avgResolutionDays = countWithTime > 0 ? parseFloat((totalResolutionMs / (1000 * 60 * 60 * 24 * countWithTime)).toFixed(1)) : 0;
 
     // Monthly Trend (last 6 months)
     const monthlyTrend = [];
@@ -302,7 +300,7 @@ router.get('/analytics/detailed', auth, async (req, res) => {
       const disputedDeptCount = deptComplaints.filter(c => c.status === 'DISPUTED').length;
 
       const onTimeResolvedDept = resolvedDept.filter(c => !c.sla_breached).length;
-      const deptSla = resolvedDeptCount > 0 ? Math.round((onTimeResolvedDept / resolvedDeptCount) * 100) : 100;
+      const deptSla = resolvedDeptCount > 0 ? Math.round((onTimeResolvedDept / resolvedDeptCount) * 100) : 0;
 
       // Avg resolution days
       let deptResolutionMs = 0;
@@ -317,11 +315,11 @@ router.get('/analytics/detailed', auth, async (req, res) => {
           }
         }
       });
-      const deptAvgDays = deptCountWithTime > 0 ? parseFloat((deptResolutionMs / (1000 * 60 * 60 * 24 * deptCountWithTime)).toFixed(1)) : 3.0;
+      const deptAvgDays = deptCountWithTime > 0 ? parseFloat((deptResolutionMs / (1000 * 60 * 60 * 24 * deptCountWithTime)).toFixed(1)) : 0;
 
       // Satisfaction score based on ratings
       const ratings = deptComplaints.filter(c => c.citizen_rating).map(c => c.citizen_rating);
-      const avgRating = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 4.0;
+      const avgRating = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 0;
       const satisfaction = Math.round(avgRating * 20); // 4.0 becomes 80%
 
       departmentWise.push({
@@ -379,21 +377,17 @@ router.get('/analytics/detailed', auth, async (req, res) => {
 
 // === USER ROUTES ===
 
-router.get('/officers', auth, authorize('department_manager', 'district_officer', 'nodal_officer', 'commissioner', 'cm_staff', 'cm', 'super_admin'), async (req, res) => {
+router.get('/officers', auth, authorize('admin', 'supervisor'), async (req, res) => {
   try {
-    const filter = { role: 'officer', is_active: true };
-    if (['department_manager', 'nodal_officer', 'commissioner'].includes(req.user.role) && req.user.department) {
-      filter.department = req.user.department;
-    } else if (req.user.role === 'district_officer' && req.user.district) {
-      filter.district = req.user.district;
-    } else {
-      if (req.query.department) filter.department = req.query.department;
-      if (req.query.district) filter.district = req.query.district;
-    }
+    const filter = { role: 'worker', is_active: true };
+    // The current four-role model keeps worker routing data on `module`,
+    // `ward` and `supervisor_id`; the old department reference was removed.
+    // Do not populate or filter a field that is not in User.schema.
+    if (req.user.role === 'supervisor' && req.user.ward) filter.ward = req.user.ward;
+    else if (req.query.district) filter.ward = req.query.district;
 
     const officers = await User.find(filter)
-      .populate('department', 'name code')
-      .sort('-officer_profile.scorecard.credibility_score');
+      .sort('-worker_profile.scorecard.rating_avg');
 
     res.json({ officers });
   } catch (err) {
@@ -401,11 +395,11 @@ router.get('/officers', auth, authorize('department_manager', 'district_officer'
   }
 });
 
-router.post('/officers', auth, authorize('cm', 'cm_staff', 'super_admin', 'department_manager'), async (req, res) => {
+router.post('/officers', auth, authorize('admin'), async (req, res) => {
   try {
-    const { name, mobile, email, district, department, designation } = req.body;
-    if (!name || !mobile || !department) {
-      return res.status(400).json({ error: 'Name, mobile and department are required' });
+    const { name, mobile, email, district, department, module, designation } = req.body;
+    if (!name || !mobile) {
+      return res.status(400).json({ error: 'Name and mobile are required' });
     }
 
     const existingUser = await User.findOne({ mobile });
@@ -417,10 +411,10 @@ router.post('/officers', auth, authorize('cm', 'cm_staff', 'super_admin', 'depar
       name,
       mobile,
       email,
-      role: 'officer',
-      district: district ? district.toLowerCase().replace(/\s+/g, '_') : 'central',
-      department,
-      officer_profile: {
+      role: 'worker',
+      ward: district ? district.toLowerCase().replace(/\s+/g, '_') : undefined,
+      module: ['DEVELOPMENT', 'WASTE', 'BOTH'].includes(module) ? module : 'BOTH',
+      worker_profile: {
         designation: designation || 'Field Officer',
         active_complaints_count: 0,
         max_capacity: 20,
@@ -448,12 +442,12 @@ router.post('/officers', auth, authorize('cm', 'cm_staff', 'super_admin', 'depar
   }
 });
 
-router.get('/officers/:id/scorecard', auth, async (req, res) => {
+router.get('/officers/:id/scorecard', auth, authorize('admin', 'supervisor'), async (req, res) => {
   try {
-    const officer = await User.findById(req.params.id).populate('department', 'name code');
-    if (!officer || officer.role !== 'officer') return res.status(404).json({ error: 'Officer not found' });
+    const officer = await User.findById(req.params.id);
+    if (!officer || officer.role !== 'worker') return res.status(404).json({ error: 'Worker not found' });
 
-    const complaints = await Complaint.find({ assigned_officer_id: officer._id })
+    const complaints = await Complaint.find({ assigned_worker_id: officer._id })
       .sort('-createdAt').limit(20).select('complaint_id status priority createdAt sla_breached category');
 
     res.json({ officer, recentComplaints: complaints });
@@ -547,7 +541,7 @@ router.post('/notifications/read-all', auth, async (req, res) => {
 const VisitLog = require('../models/VisitLog');
 
 
-router.post('/visits', auth, authorize('cm', 'cm_staff', 'district_officer', 'super_admin'), async (req, res) => {
+router.post('/visits', auth, authorize('admin'), async (req, res) => {
   try {
     const { location, visit_date, purpose, notes } = req.body;
     if (!location || !visit_date || !purpose) {
@@ -636,7 +630,7 @@ router.get('/visits', auth, async (req, res) => {
 
 // === CORRUPTION RISK ===
 
-router.get('/corruption-risk', auth, authorize('cm', 'cm_staff', 'super_admin'), async (req, res) => {
+router.get('/corruption-risk', auth, authorize('admin'), async (req, res) => {
   try {
     const officers = await User.find({ role: 'officer', is_active: true }).populate('department', 'name code');
     const riskScores = [];
@@ -779,7 +773,7 @@ router.get('/hotspots', auth, async (req, res) => {
 
 // === AUDIT LOGS ===
 
-router.get('/audit-logs', auth, authorize('cm', 'cm_staff', 'super_admin'), async (req, res) => {
+router.get('/audit-logs', auth, authorize('admin'), async (req, res) => {
   try {
     const AuditEvent = require('../models/AuditEvent');
     const logs = await AuditEvent.find()

@@ -34,11 +34,11 @@ export default function SettingsPage() {
     }
     // Load saved notification prefs
     try {
-      const savedNotif = localStorage.getItem('vaani_notif_prefs');
+      const savedNotif = localStorage.getItem('nagarsetu_notif_prefs');
       if (savedNotif) setNotifications(JSON.parse(savedNotif));
-      const savedTheme = localStorage.getItem('vaani_theme');
+      const savedTheme = localStorage.getItem('nagarsetu_theme');
       if (savedTheme) setTheme(savedTheme);
-      const savedLang = localStorage.getItem('vaani_language');
+      const savedLang = localStorage.getItem('nagarsetu_language');
       if (savedLang) setLanguage(savedLang);
     } catch { /* ignore */ }
   }, []);
@@ -47,7 +47,7 @@ export default function SettingsPage() {
     setSaveStatus('saving');
     try {
       // Try live save via API
-      const token = localStorage.getItem('vaani_token');
+      const token = localStorage.getItem('nagarsetu_token');
       if (token) {
         const res = await fetch(
           (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api') + '/auth/me',
@@ -75,7 +75,7 @@ export default function SettingsPage() {
         setUser(updated);
       }
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('vaani_user_updated'));
+        window.dispatchEvent(new Event('nagarsetu_user_updated'));
       }
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus(''), 2500);
@@ -87,7 +87,7 @@ export default function SettingsPage() {
         setUser(updated);
       }
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('vaani_user_updated'));
+        window.dispatchEvent(new Event('nagarsetu_user_updated'));
       }
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus(''), 2500);
@@ -97,7 +97,7 @@ export default function SettingsPage() {
   const handleToggleNotification = (key, val) => {
     setNotifications(prev => {
       const updated = { ...prev, [key]: val };
-      localStorage.setItem('vaani_notif_prefs', JSON.stringify(updated));
+      localStorage.setItem('nagarsetu_notif_prefs', JSON.stringify(updated));
       return updated;
     });
     setNotifSaveStatus('saved');
@@ -106,10 +106,10 @@ export default function SettingsPage() {
 
   const handleThemeChange = (t) => {
     setTheme(t);
-    localStorage.setItem('vaani_theme', t);
+    localStorage.setItem('nagarsetu_theme', t);
     if (typeof window !== 'undefined') {
       document.documentElement.setAttribute('data-theme', t);
-      window.dispatchEvent(new Event('vaani_appearance_changed'));
+      window.dispatchEvent(new Event('nagarsetu_appearance_changed'));
     }
     setSaveStatus('theme_saved');
     setTimeout(() => setSaveStatus(''), 1500);
@@ -117,10 +117,10 @@ export default function SettingsPage() {
 
   const handleLanguageChange = (l) => {
     setLanguage(l);
-    localStorage.setItem('vaani_language', l);
+    localStorage.setItem('nagarsetu_language', l);
     if (typeof window !== 'undefined') {
       document.documentElement.setAttribute('data-lang', l);
-      window.dispatchEvent(new Event('vaani_appearance_changed'));
+      window.dispatchEvent(new Event('nagarsetu_appearance_changed'));
     }
     setSaveStatus('theme_saved');
     setTimeout(() => setSaveStatus(''), 1500);
@@ -129,7 +129,7 @@ export default function SettingsPage() {
   const handleSaveNotifications = () => {
     setNotifSaveStatus('saving');
     try {
-      localStorage.setItem('vaani_notif_prefs', JSON.stringify(notifications));
+      localStorage.setItem('nagarsetu_notif_prefs', JSON.stringify(notifications));
       setNotifSaveStatus('saved');
       setTimeout(() => setNotifSaveStatus(''), 2500);
     } catch {
@@ -139,8 +139,8 @@ export default function SettingsPage() {
   };
 
   const handleSaveAppearance = () => {
-    localStorage.setItem('vaani_theme', theme);
-    localStorage.setItem('vaani_language', language);
+    localStorage.setItem('nagarsetu_theme', theme);
+    localStorage.setItem('nagarsetu_language', language);
     // Apply theme immediately
     document.documentElement.setAttribute('data-theme', theme);
     setSaveStatus('theme_saved');
@@ -167,7 +167,7 @@ export default function SettingsPage() {
       <div className="page-header">
         <div className="page-title">
           <h1>⚙️ Settings</h1>
-          <span className="page-title-hi">सेटिंग्स — System Configuration</span>
+          <span className="page-title-hi">सेटिंग्स - System Configuration</span>
         </div>
       </div>
 
@@ -359,7 +359,7 @@ export default function SettingsPage() {
           <div className="card-body">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
               {[
-                ['System', 'VAANI CM Grievance Dashboard v2.0'],
+                ['System', 'NagarSetu Civic Operations'],
                 ['Organization', 'Government of NCT of Delhi'],
                 ['User Role', user?.role ? user.role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'N/A'],
                 ['Department', user?.department?.name || user?.district || 'CM War Room'],

@@ -10,6 +10,13 @@ class FeatureBuilder {
    * Weight: 30% of priority
    */
   static calculateImpact(features, issueType) {
+    if (features.emergency_signal) {
+      return {
+        score: 1.0,
+        breakdown: { population: 1.0, traffic: 1.0, facility: 1.0, service: 1.0 }
+      };
+    }
+
     const weights = {
       population: 0.35,    // How many people affected
       traffic: 0.25,       // Traffic disruption
@@ -54,6 +61,13 @@ class FeatureBuilder {
    * Weight: 25% of priority
    */
   static calculateUrgency(features, issueType) {
+    if (features.emergency_signal) {
+      return {
+        score: 1.0,
+        breakdown: { currentSeverity: 1.0, deterioration: 1.0, deadline: 1.0, activeRisk: 1.0 }
+      };
+    }
+
     const weights = {
       currentSeverity: 0.40,   // How bad is it now?
       deterioration: 0.30,      // Is it getting worse?
@@ -108,6 +122,13 @@ class FeatureBuilder {
    * Weight: 20% of priority
    */
   static calculateRisk(features, issueType) {
+    if (features.emergency_signal) {
+      return {
+        score: 1.0,
+        breakdown: { safety: 1.0, health: 1.0, cascade: 1.0, futureDamage: 1.0 }
+      };
+    }
+
     const weights = {
       safety: 0.40,    // Safety hazard potential
       health: 0.25,     // Health risk
@@ -187,6 +208,13 @@ class FeatureBuilder {
    * Weight: 15% of priority
    */
   static calculateContext(features, issueType) {
+    if (features.emergency_signal) {
+      return {
+        score: 1.0,
+        breakdown: { weather: 1.0, event: 1.0, spike: 1.0, seasonal: 1.0 }
+      };
+    }
+
     const weights = {
       weather: 0.35,      // Current weather conditions
       event: 0.25,         // Special events/festivals
@@ -234,6 +262,8 @@ class FeatureBuilder {
    * Used for "cost of waiting" analysis
    */
   static calculateDeterioration(features, issueType) {
+    if (features.emergency_signal) return 1.0;
+
     let baseRate = features.severity * 0.1; // Base deterioration
     
     // Weather accelerates deterioration

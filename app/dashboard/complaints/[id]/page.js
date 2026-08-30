@@ -340,7 +340,7 @@ export default function ComplaintDetailPage() {
               )}
             </div>
             <span className="page-title-hi">
-              शिकायत विवरण — {complaint.category?.toUpperCase()}
+              शिकायत विवरण - {complaint.category?.toUpperCase()}
             </span>
           </div>
         </div>
@@ -350,7 +350,7 @@ export default function ComplaintDetailPage() {
       {complaint.sla_breached && (
         <div className="alert-banner alert-banner-warning" style={{ marginBottom: 'var(--space-6)' }}>
           <span className="alert-banner-icon">⏰</span>
-          <strong>SLA BREACHED</strong> — This complaint has exceeded its resolution deadline.
+          <strong>SLA BREACHED</strong> - This complaint has exceeded its resolution deadline.
         </div>
       )}
 
@@ -359,12 +359,12 @@ export default function ComplaintDetailPage() {
         <div className="alert-banner alert-banner-info" style={{ marginBottom: 'var(--space-6)' }}>
           <span className="alert-banner-icon">⭐</span>
           <strong>Citizen Rating:</strong> {'⭐'.repeat(complaint.citizen_rating)} ({complaint.citizen_rating}/5)
-          {complaint.citizen_feedback_text && <span> — &quot;{complaint.citizen_feedback_text}&quot;</span>}
+          {complaint.citizen_feedback_text && <span> - &quot;{complaint.citizen_feedback_text}&quot;</span>}
         </div>
       )}
 
       <div className="grid-dashboard">
-        {/* Left Column — Complaint Details */}
+        {/* Left Column - Complaint Details */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
           <div className="card">
             <div className="card-header">
@@ -505,7 +505,7 @@ export default function ComplaintDetailPage() {
           </div>
         </div>
 
-        {/* Right Column — Actions & Timeline */}
+        {/* Right Column - Actions & Timeline */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
           {/* Quick Actions */}
           <div className="card">

@@ -1,5 +1,5 @@
 /**
- * VAANI Vigilant AI Detection & Authenticity Verification Agent
+ * NagarSetu authenticity and evidence triage agent
  * Performs simulated heuristic checks for fake complaints, fraud detection, 
  * and evidence (photo/video) authenticity.
  */

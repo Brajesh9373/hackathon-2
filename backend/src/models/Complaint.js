@@ -186,7 +186,6 @@ complaintSchema.index({ assigned_supervisor_id: 1, status: 1 });
 complaintSchema.index({ assigned_worker_id: 1, status: 1 });
 complaintSchema.index({ citizen_id: 1 });
 complaintSchema.index({ priority_score: -1 });
-complaintSchema.index({ complaint_id: 1 }, { unique: true });
 complaintSchema.index({ 'location.coords': '2dsphere' });
 
 module.exports = mongoose.model('Complaint', complaintSchema);

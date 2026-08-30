@@ -61,8 +61,8 @@ export default function LeaderboardPage() {
         {podiumOrder.map((idx, pos) => {
           const item = top3[idx];
           const name = type === 'districts' ? item.district : item.name;
-          const score = type === 'districts' ? `${item.score || item.resolution_rate} pts` : `${item.officer_profile?.scorecard?.credibility_score || 0}/100`;
-          const sub = type === 'districts' ? item.dm_name : (item.department?.name || 'Department');
+          const score = type === 'districts' ? `${item.score || item.resolution_rate || 0} pts` : `${item.worker_profile?.scorecard?.rating_avg || 0}/5`;
+          const sub = type === 'districts' ? item.dm_name : (item.module || 'Civic network');
           return (
             <div key={idx} className="podium-step" style={{ '--pos-height': heights[pos], '--pos-color': colors[pos] }}>
               <div className="podium-medal">{medals[idx]}</div>
@@ -85,7 +85,7 @@ export default function LeaderboardPage() {
       <div className="page-header">
         <div className="page-title">
           <h1>🏆 Accountability Leaderboard</h1>
-          <span className="page-title-hi">जवाबदेही लीडरबोर्ड — प्रदर्शन रैंकिंग</span>
+          <span className="page-title-hi">जवाबदेही लीडरबोर्ड - प्रदर्शन रैंकिंग</span>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
           <button
@@ -214,7 +214,7 @@ export default function LeaderboardPage() {
                     <th style={{ width: 70, textAlign: 'center' }}>Rank</th>
                     <th style={{ minWidth: 180 }}>Officer Name / पद</th>
                     <th style={{ minWidth: 160 }}>Department / Area</th>
-                    <th style={{ textAlign: 'center', minWidth: 150 }}>Credibility Score</th>
+                    <th style={{ textAlign: 'center', minWidth: 150 }}>Worker Rating</th>
                     <th style={{ textAlign: 'center', minWidth: 90 }}>Assigned</th>
                     <th style={{ textAlign: 'center', minWidth: 90 }}>Resolved</th>
                     <th style={{ textAlign: 'center', minWidth: 140 }}>Avg Resolution</th>
@@ -223,10 +223,10 @@ export default function LeaderboardPage() {
                 <tbody>
                   {officersList.map((officer, index) => {
                     const rank = index + 1;
-                    const profile = officer.officer_profile || {};
+                    const profile = officer.worker_profile || {};
                     const scorecard = profile.scorecard || {};
-                    const credibility = scorecard.credibility_score || 100;
-                    const credColor = credibility >= 85 ? 'var(--color-green)' : credibility >= 70 ? 'var(--color-saffron)' : 'var(--priority-critical)';
+                    const credibility = scorecard.rating_avg || 0;
+                    const credColor = credibility >= 4.25 ? 'var(--color-green)' : credibility >= 3.5 ? 'var(--color-saffron)' : 'var(--priority-critical)';
                     const rankIcon = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
                     return (
                       <tr key={officer._id} style={{ background: rank <= 3 ? 'var(--color-surface-hover)' : 'none' }}>
@@ -236,16 +236,16 @@ export default function LeaderboardPage() {
                           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>{profile.designation || 'Field Officer'}</div>
                         </td>
                         <td>
-                          <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{officer.department?.name || 'Department'}</div>
-                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>📍 {officer.district}</div>
+                          <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>{officer.module || 'Civic network'}</div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>📍 {officer.ward || 'Area pending'}</div>
                         </td>
                         <td style={{ textAlign: 'center', padding: 'var(--space-4)' }}>
-                          <div style={{ fontWeight: 800, color: credColor, fontSize: 'var(--text-xl)', marginBottom: 4 }}>{credibility} / 100</div>
+                          <div style={{ fontWeight: 800, color: credColor, fontSize: 'var(--text-xl)', marginBottom: 4 }}>{credibility} / 5</div>
                           <div className="progress-bar" style={{ height: 8, width: 100, margin: '0 auto' }}>
                             <div
                               className="progress-bar-fill"
                               style={{
-                                width: `${credibility}%`,
+                                width: `${Math.min(100, credibility * 20)}%`,
                                 background: credColor
                               }}
                             />
@@ -254,7 +254,7 @@ export default function LeaderboardPage() {
                         <td style={{ textAlign: 'center', fontWeight: 700, fontSize: 'var(--text-base)' }}>{scorecard.total_assigned || 0}</td>
                         <td style={{ textAlign: 'center', color: 'var(--color-green)', fontWeight: 700, fontSize: 'var(--text-base)' }}>{scorecard.total_resolved || 0}</td>
                         <td style={{ textAlign: 'center', fontWeight: 600, fontSize: 'var(--text-sm)' }}>
-                          {scorecard.avg_resolution_time_hours ? `${Math.round(scorecard.avg_resolution_time_hours / 24)} days` : 'N/A'}
+                          {scorecard.avg_completion_time_hours ? `${Math.round(scorecard.avg_completion_time_hours / 24)} days` : '0 days'}
                         </td>
                       </tr>
                     );

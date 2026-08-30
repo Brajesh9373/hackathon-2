@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { initRadar, checkLocationForCalling } from '../lib/geofencing';
+import { initRadar, checkCoordinatesForCalling, checkLocationForCalling } from '../lib/geofencing';
 
 export default function GeofencingStatus({ complaint, onStatusChange }) {
   const [status, setStatus] = useState('checking'); // checking, allowed, restricted, error
@@ -9,12 +9,12 @@ export default function GeofencingStatus({ complaint, onStatusChange }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (complaint?.citizenPhone) {
+    if (complaint?.citizenPhone || complaint?.citizen_mobile || complaint?.citizen_id) {
       checkCitizenLocation();
     }
   }, [complaint]);
 
-  const checkCitizenLocation = async () => {
+  async function checkCitizenLocation() {
     setLoading(true);
     setStatus('checking');
     
@@ -23,7 +23,10 @@ export default function GeofencingStatus({ complaint, onStatusChange }) {
       initRadar();
       
       // Check location
-      const result = await checkLocationForCalling();
+      const coords = complaint?.location?.coords;
+      const result = coords
+        ? await checkCoordinatesForCalling({ latitude: coords.lat, longitude: coords.lng })
+        : await checkLocationForCalling();
       
       setLocationInfo(result);
       

@@ -38,21 +38,21 @@ export default function OfficersPage() {
       const res = await resources.officers();
       if (res && res.officers) {
         const mapped = res.officers.map(o => {
-          const card = o.officer_profile?.scorecard || {};
+          const card = o.worker_profile?.scorecard || {};
           return {
             id: o._id,
             name: o.name,
             nameHi: o.name,
-            designation: o.officer_profile?.designation || 'Field Officer',
-            department: o.department?.name || 'MCD',
-            activeComplaints: o.officer_profile?.active_complaints_count || 0,
-            resolvedThisMonth: card.total_resolved || 0,
-            avgResolutionDays: card.avg_resolution_time_hours ? Math.round(card.avg_resolution_time_hours / 24) : 2,
-            performance: card.credibility_score || 95,
-            bandwidth: o.officer_profile?.active_complaints_count > 15 ? 'overloaded' : o.officer_profile?.active_complaints_count > 10 ? 'high' : 'low',
-            district: o.district,
+            designation: o.worker_profile?.designation || 'Field owner',
+            department: o.module || 'Civic network',
+            activeComplaints: o.worker_profile?.active_tasks || 0,
+            resolvedThisMonth: card.total_completed || 0,
+            avgResolutionDays: card.avg_completion_time_hours ? Math.round(card.avg_completion_time_hours / 24) : 0,
+            performance: card.rating_avg || 0,
+            bandwidth: o.worker_profile?.active_tasks > 15 ? 'overloaded' : o.worker_profile?.active_tasks > 10 ? 'high' : 'low',
+            district: o.ward,
             phone: o.mobile,
-            status: o.officer_profile?.is_available ? 'active' : 'on_leave'
+            status: o.worker_profile?.status === 'AVAILABLE' ? 'active' : 'on_leave'
           };
         });
         setOfficersList(mapped);
@@ -171,7 +171,7 @@ export default function OfficersPage() {
       <div className="page-header">
         <div className="page-title">
           <h1>👤 Officers Directory</h1>
-          <span className="page-title-hi">अधिकारी निर्देशिका — {officersList.length} अधिकारी</span>
+          <span className="page-title-hi">अधिकारी निर्देशिका - {officersList.length} अधिकारी</span>
         </div>
         <div className="page-actions">
           <button 
@@ -348,7 +348,7 @@ export default function OfficersPage() {
                   <input
                     type="email"
                     className="form-input"
-                    placeholder="e.g. officer@vaani.gov.in"
+                    placeholder="e.g. officer@nagarsetu.gov.in"
                     value={newOfficer.email}
                     onChange={(e) => setNewOfficer({ ...newOfficer, email: e.target.value })}
                   />
@@ -455,7 +455,7 @@ export default function OfficersPage() {
                     >
                       {assignableComplaints.map((c) => (
                         <option key={c._id} value={c.complaint_id}>
-                          {c.complaint_id} — {c.category?.toUpperCase()} ({c.status})
+                          {c.complaint_id} - {c.category?.toUpperCase()} ({c.status})
                         </option>
                       ))}
                     </select>

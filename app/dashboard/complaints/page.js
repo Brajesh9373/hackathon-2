@@ -174,7 +174,7 @@ export default function ComplaintsPage() {
       <div className="page-header">
         <div className="page-title">
           <h1>📋 All Complaints</h1>
-          <span className="page-title-hi">सभी शिकायतें — कुल {statusCounts[statusFilter] !== undefined ? statusCounts[statusFilter] : filteredComplaints.length} शिकायतें</span>
+          <span className="page-title-hi">सभी शिकायतें - कुल {statusCounts[statusFilter] !== undefined ? statusCounts[statusFilter] : filteredComplaints.length} शिकायतें</span>
         </div>
         <div className="page-actions">
           <button
@@ -290,7 +290,7 @@ export default function ComplaintsPage() {
         {searchQuery && <> for &quot;<strong>{searchQuery}</strong>&quot;</>}
       </div>
 
-      {/* Complaints List — Card View */}
+      {/* Complaints List - Card View */}
       {viewMode === 'cards' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           {filteredComplaints.map((complaint) => (
@@ -338,7 +338,7 @@ export default function ComplaintsPage() {
         </div>
       )}
 
-      {/* Complaints List — Table View */}
+      {/* Complaints List - Table View */}
       {viewMode === 'table' && (
         <div className="card" style={{ overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
@@ -372,7 +372,7 @@ export default function ComplaintsPage() {
                     <td><StatusBadge status={c.status} /></td>
                     <td><PriorityBadge priority={c.priority} /></td>
                     <td style={{ whiteSpace: 'nowrap' }}>{formatDate(c.createdAt)}</td>
-                    <td>{c.assignedTo || '—'}</td>
+                    <td>{c.assignedTo || '-'}</td>
                   </tr>
                 ))}
               </tbody>

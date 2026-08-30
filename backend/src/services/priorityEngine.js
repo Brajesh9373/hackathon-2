@@ -222,9 +222,9 @@ function calculatePriority(complaint) {
     };
   }
   
-  const module = complaint.module || 'DEVELOPMENT';
+  const complaintModule = complaint.module || 'DEVELOPMENT';
   
-  if (module === 'WASTE') {
+  if (complaintModule === 'WASTE') {
     return calculateWastePriority(complaint);
   }
   
@@ -235,10 +235,11 @@ function calculatePriority(complaint) {
  * Get priority label from score
  */
 function getPriorityLabel(score) {
-  if (score >= 90) return { label: 'CRITICAL', color: '#D50000', icon: '🔴' };
-  if (score >= 75) return { label: 'HIGH', color: '#E65100', icon: '🟠' };
-  if (score >= 50) return { label: 'MEDIUM', color: '#F57F17', icon: '🟡' };
-  return { label: 'LOW', color: '#2E7D32', icon: '🟢' };
+  if (score >= 75) return { label: 'CRITICAL', color: '#D50000', icon: '🔴' };
+  if (score >= 55) return { label: 'HIGH', color: '#E65100', icon: '🟠' };
+  if (score >= 35) return { label: 'MEDIUM', color: '#F57F17', icon: '🟡' };
+  if (score >= 15) return { label: 'LOW', color: '#2E7D32', icon: '🟢' };
+  return { label: 'MINIMAL', color: '#607D8B', icon: '⚪' };
 }
 
 /**

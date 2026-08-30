@@ -10,9 +10,11 @@ const DEMO_MODE = process.env.DEMO_MODE === 'true';
 // roles behind this boundary so the demo buttons always land on usable APIs.
 const DEMO_ROLE_BY_MOBILE = {
   '+919800000020': { name: 'Citizen', role: 'citizen' },
-  '+919999000023': { name: 'Civic Admin', role: 'super_admin' },
-  '+919999000004': { name: 'Area Supervisor', role: 'department_manager' },
-  '+919999000005': { name: 'Field Worker', role: 'officer' },
+  // The hackathon demo citizen number is also the verification-call target.
+  '+918282909044': { name: 'Citizen', role: 'citizen' },
+  '+919999000023': { name: 'Civic Admin', role: 'admin' },
+  '+919999000004': { name: 'Area Supervisor', role: 'supervisor' },
+  '+919999000005': { name: 'Field Worker', role: 'worker' },
 };
 
 function generateTokens(user) {
@@ -44,9 +46,9 @@ exports.sendOtp = async (req, res) => {
         mobile,
         role: demoProfile?.role || 'citizen',
       });
-    } else if (demoProfile && user.role === 'citizen' && user.name === 'Citizen') {
-      // Earlier demo runs may have auto-created these numbers as citizens.
-      // Normalize only those placeholder records, never an existing named user.
+    } else if (demoProfile) {
+      // Demo numbers are reserved for the four visible workspaces. Normalize
+      // records created by an earlier build (which used legacy role names).
       user.name = demoProfile.name;
       user.role = demoProfile.role;
     }
@@ -146,13 +148,15 @@ exports.refreshToken = async (req, res) => {
 
 exports.logout = async (req, res) => {
   try {
-    if (req.user) {
-      req.user.refresh_token = undefined;
-      await req.user.save();
-    }
+    // Clear only the session field. Saving a stale legacy user document can
+    // re-run enum validation and turn a harmless logout into a 500.
+    if (req.user?._id) await User.updateOne({ _id: req.user._id }, { $unset: { refresh_token: 1 } });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Logout failed' });
+    console.error('Logout error:', err.message);
+    // Logout is idempotent from the client’s perspective; local session
+    // cleanup should still proceed even if the database is briefly unavailable.
+    res.json({ success: true });
   }
 };
 

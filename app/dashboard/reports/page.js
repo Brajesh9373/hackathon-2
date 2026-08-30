@@ -10,7 +10,8 @@ export default function ReportsPage() {
     pendingComplaints: 0,
     resolvedToday: 0,
     slaCompliance: 0,
-    citizenSatisfaction: 85,
+    citizenSatisfaction: 0,
+    criticalAlerts: 0,
     falseClosure: 0,
     weeklyGrievances: [],
     departmentWise: [],
@@ -27,11 +28,12 @@ export default function ReportsPage() {
         if (res && !res.error) {
           setStats({
             totalComplaints: res.totalComplaints || 0,
-            todayComplaints: res.resolvedComplaints || 0, // Fallback to resolvedComplaints
+            todayComplaints: res.todayFiled || 0,
             pendingComplaints: res.pendingComplaints || 0,
             resolvedToday: res.resolvedComplaints || 0,
             slaCompliance: res.slaCompliance || 0,
-            citizenSatisfaction: 85,
+            citizenSatisfaction: res.citizenSatisfaction || 0,
+            criticalAlerts: res.criticalAlerts || 0,
             falseClosure: res.falseClosure || 0,
             weeklyGrievances: res.monthlyTrend || [],
             departmentWise: res.departmentWise || [],
@@ -69,14 +71,16 @@ export default function ReportsPage() {
           rows.push(['Resolved Today', stats.resolvedToday, 'आज हल की गई']);
           rows.push(['Pending Cases', stats.pendingComplaints, 'लंबित मामले']);
           rows.push(['SLA Compliance Rate', `${stats.slaCompliance}%`, 'SLA अनुपालन दर']);
-          rows.push(['Average Resolution Time', `${stats.avgResolutionDays || 4.2} days`, 'औसत समाधान समय']);
+          rows.push(['Average Resolution Time', `${stats.avgResolutionDays || 0} days`, 'औसत समाधान समय']);
           break;
         case 'weekly':
           headers.push('Week Segment', 'Complaints Filed', 'Complaints Resolved', 'SLA Compliance');
-          rows.push(['Week 24 (Latest)', 247, 189, '88%']);
-          rows.push(['Week 23', 290, 230, '86%']);
-          rows.push(['Week 22', 310, 250, '85%']);
-          rows.push(['Week 21', 280, 245, '89%']);
+          (stats.weeklyGrievances || []).slice(-4).forEach(period => {
+            const filed = period.complaints || 0;
+            const resolved = period.resolved || 0;
+            rows.push([period.month || 'Period', filed, resolved, `${filed > 0 ? Math.round((resolved / filed) * 100) : 0}%`]);
+          });
+          if (!rows.length) rows.push(['No data yet', 0, 0, '0%']);
           break;
         case 'dept':
           headers.push('Department ID', 'Department Name', 'Complaints Count', 'Resolved Count', 'Pending Count', 'SLA Compliance %', 'Avg Resolution Days', 'Citizen Satisfaction');
@@ -88,7 +92,7 @@ export default function ReportsPage() {
               d.resolved || 0,
               (d.complaints || 0) - (d.resolved || 0),
               `${d.slaCompliance}%`,
-              d.avgResolutionDays || 3,
+              d.avgResolutionDays || 0,
               `${d.satisfaction}%`
             ]);
           });
@@ -121,7 +125,7 @@ export default function ReportsPage() {
         case 'false_closure':
           headers.push('Department', 'Resolved Complaints', 'Citizen Disputed Count', 'False Closure Rate');
           stats.departmentWise?.forEach(d => {
-            const rate = stats.falseClosure || 8.3;
+            const rate = stats.falseClosure || 0;
             const disputed = Math.round((d.resolved || 0) * (rate / 100));
             rows.push([
               d.name,
@@ -134,7 +138,7 @@ export default function ReportsPage() {
         case 'citizen_sat':
           headers.push('Department', 'Citizen Satisfaction Rate', 'Average Citizen Rating', 'Total Feedback Received');
           stats.departmentWise?.forEach(d => {
-            const rating = (3.5 + (d.satisfaction / 100) * 1.5).toFixed(1);
+            const rating = ((d.satisfaction || 0) / 100 * 5).toFixed(1);
             rows.push([
               d.name,
               `${d.satisfaction}%`,
@@ -145,9 +149,7 @@ export default function ReportsPage() {
           break;
         case 'critical':
           headers.push('DEFCON Priority', 'Total Active', 'Resolution target', 'Escalation Status');
-          rows.push(['DEFCON RED', '12', '4 Hours', 'Auto-Escalated to Chief Minister']);
-          rows.push(['DEFCON ORANGE', '28', '24 Hours', 'Escalated to Nodal Head']);
-          rows.push(['DEFCON YELLOW', '89', '72 Hours', 'Standard queue']);
+          rows.push(['Active priority alerts', stats.criticalAlerts || 0, 'Review queue', stats.criticalAlerts ? 'Needs attention' : 'No active alerts']);
           break;
         default:
           headers.push('Report Title', 'Date Generated');
@@ -166,7 +168,7 @@ export default function ReportsPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      const filename = `VAANI_${report.id}_report_${new Date().toISOString().slice(0, 10)}.csv`;
+      const filename = `NagarSetu_${report.id}_report_${new Date().toISOString().slice(0, 10)}.csv`;
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
@@ -212,7 +214,7 @@ export default function ReportsPage() {
       {/* Quick Stats Summary */}
       <div className="card" style={{ marginBottom: 'var(--space-8)', background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%)', color: 'white' }}>
         <div className="card-body">
-          <h3 style={{ color: 'white', marginBottom: 'var(--space-4)' }}>📊 Quick Summary — {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</h3>
+          <h3 style={{ color: 'white', marginBottom: 'var(--space-4)' }}>📊 Quick Summary - {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--space-6)' }}>
             <div>
               <div style={{ fontSize: 'var(--text-3xl)', fontWeight: 800 }}>{stats.totalComplaints.toLocaleString()}</div>

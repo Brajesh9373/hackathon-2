@@ -276,11 +276,11 @@ router.get('/factors', (req, res) => {
       }
     },
     bands: {
-      CRITICAL: { min: 90, max: 100, action: 'ACT immediately' },
-      HIGH: { min: 75, max: 89, action: 'ACT soon' },
-      MEDIUM: { min: 50, max: 74, action: 'SCHEDULE' },
-      LOW: { min: 25, max: 49, action: 'MONITOR' },
-      MINIMAL: { min: 0, max: 24, action: 'DEFER' }
+      CRITICAL: { min: 75, max: 100, action: 'ACT immediately' },
+      HIGH: { min: 55, max: 74, action: 'ACT soon' },
+      MEDIUM: { min: 35, max: 54, action: 'SCHEDULE' },
+      LOW: { min: 15, max: 34, action: 'MONITOR' },
+      MINIMAL: { min: 0, max: 14, action: 'DEFER' }
     }
   });
 });

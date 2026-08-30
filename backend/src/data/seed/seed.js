@@ -155,8 +155,8 @@ async function seed() {
   const complaints = [];
   
   for (let i = 0; i < 25; i++) {
-    const module = Math.random() > 0.5 ? 'DEVELOPMENT' : 'WASTE';
-    const dataList = complaintData[module];
+    const complaintModule = Math.random() > 0.5 ? 'DEVELOPMENT' : 'WASTE';
+    const dataList = complaintData[complaintModule];
     const data = dataList[Math.floor(Math.random() * dataList.length)];
     const citizen = citizens[Math.floor(Math.random() * citizens.length)];
     const ward = wards[Math.floor(Math.random() * wards.length)];
@@ -174,7 +174,7 @@ async function seed() {
       citizen_mobile: citizen.mobile,
       complaint_text: data.text,
       category: data.category,
-      module: module,
+      module: complaintModule,
       location: {
         address: `${zone}, ${ward}, Kopargaon`,
         ward: ward,
@@ -194,7 +194,7 @@ async function seed() {
     
     // Add supervisor assignment
     if (['ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'VERIFIED', 'CLOSED'].includes(status)) {
-      const relevantSups = supervisors.filter(s => s.module === module || s.module === 'BOTH');
+      const relevantSups = supervisors.filter(s => s.module === complaintModule || s.module === 'BOTH');
       const sup = relevantSups[Math.floor(Math.random() * relevantSups.length)] || supervisors[0];
       complaint.assigned_supervisor_id = sup._id;
       complaint.assigned_supervisor_name = sup.name;

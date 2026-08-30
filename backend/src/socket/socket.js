@@ -1,5 +1,5 @@
 /**
- * Socket.io Server Setup — Real-time event system for VAANI
+ * Socket.io server setup for NagarSetu real-time events
  */
 
 function setupSocket(io) {

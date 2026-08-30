@@ -1,187 +1,145 @@
 /**
- * Geofencing Utility using Radar SDK
- * Checks if user location is in restricted zones (hospital, school, etc.)
+ * Radar safety gate for automated citizen calls.
+ *
+ * radar-sdk-js 3.x exposes callback-based browser methods. Keeping the
+ * callback bridge here prevents a false "allowed" result from an unresolved
+ * promise and gives every caller the same fail-closed contract.
  */
-
 import Radar from 'radar-sdk-js';
 
-// Restricted place types that should not be called
 export const RESTRICTED_PLACE_TYPES = {
   hospital: 'Hospital',
+  clinic: 'Clinic / medical centre',
   school: 'School',
+  college: 'College',
   church: 'Church',
   mosque: 'Mosque',
   temple: 'Temple',
   bank: 'Bank',
   court: 'Court',
-  government: 'Government Office',
-  police: 'Police Station',
-  fire_station: 'Fire Station',
+  government: 'Government office',
+  police: 'Police station',
+  fire_station: 'Fire station',
 };
 
-// Kopargaon area coordinates
-export const KOPARGAON_CENTER = {
-  latitude: 19.8850,
-  longitude: 74.4780,
-};
-
-// Default radius in meters
-const DEFAULT_RADIUS = 100; // 100 meters from place center
-
+export const KOPARGAON_CENTER = { latitude: 19.8850, longitude: 74.4780 };
+const SEARCH_RADIUS_METERS = 200;
+// Radar's places endpoint requires at least one filter. Keep the query scoped
+// to the sensitive place categories we actually use for call safety, rather
+// than requesting an unfiltered (and rejected) nearby-place search.
+const SAFETY_PLACE_CATEGORIES = [
+  'hospital',
+  'clinic',
+  'school',
+  'college',
+  'police',
+  'fire_station',
+  'government',
+  'court',
+  'bank',
+  'place_of_worship',
+];
 let radarInitialized = false;
 
-/**
- * Initialize Radar SDK with API key from env
- */
+function radarCall(method, options) {
+  return new Promise((resolve, reject) => {
+    try {
+      Radar[method](options, (error, result) => {
+        if (error) reject(error);
+        else resolve(result || {});
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 export function initRadar() {
-  if (radarInitialized) return;
-  
+  if (typeof window === 'undefined') return false;
+  if (radarInitialized) return true;
   const apiKey = process.env.NEXT_PUBLIC_RADAR_PUBLISHABLE_KEY;
-  if (!apiKey) {
-    console.warn('Radar API key not provided in env');
+  if (!apiKey) return false;
+  try {
+    Radar.initialize(apiKey);
+    radarInitialized = true;
+    return true;
+  } catch (error) {
+    console.error('Radar initialization failed:', error);
     return false;
   }
-  
-  Radar.initialize(apiKey, {
-    logLevel: 'error',
-  });
-  
-  radarInitialized = true;
-  return true;
 }
 
-/**
- * Check if Radar is initialized
- */
-export function isRadarInitialized() {
-  return radarInitialized;
+export function isRadarInitialized() { return radarInitialized; }
+
+function getPlaceTokens(place) {
+  const categories = Array.isArray(place?.categories) ? place.categories : [];
+  return categories.flatMap(category => typeof category === 'string'
+    ? [category]
+    : [category?.id, category?.name]).filter(Boolean).map(value => String(value).toLowerCase());
 }
 
-/**
- * Get user's current location and check for restricted places
- * @returns {Object} - { canCall: boolean, reason: string, nearbyPlaces: Array }
- */
-export async function checkLocationForCalling() {
-  if (!radarInitialized) {
-    // Fallback without Radar - just get location
-    return await checkLocationWithFallback();
+function restrictedPlace(place) {
+  const tokens = [...getPlaceTokens(place), String(place?.name || '').toLowerCase()];
+  return Object.keys(RESTRICTED_PLACE_TYPES).find(type => tokens.some(token => token.includes(type) || (type === 'fire_station' && token.includes('fire'))));
+}
+
+function blocked(reason, extra = {}) {
+  return { canCall: false, reason, nearbyPlaces: [], ...extra };
+}
+
+/** Check a known citizen/complaint coordinate without using the worker's GPS. */
+export async function checkCoordinatesForCalling(coordinates) {
+  if (!coordinates || !Number.isFinite(Number(coordinates.latitude)) || !Number.isFinite(Number(coordinates.longitude))) {
+    return blocked('Citizen location is missing, so the automated call is held.');
   }
-  
+  if (!radarInitialized && !initRadar()) {
+    return blocked('Radar safety verification is not configured, so the automated call is held.');
+  }
+  const userLocation = { latitude: Number(coordinates.latitude), longitude: Number(coordinates.longitude) };
   try {
-    // Track user's current location
-    const result = await Radar.trackOnce();
-    const { location, events } = result;
-    
-    if (!location) {
-      return {
-        canCall: true,
-        reason: 'Could not determine location',
-        nearbyPlaces: [],
-      };
-    }
-    
-    // Search for nearby places
-    const placesResult = await Radar.searchPlaces({
-      near: {
-        latitude: location.coordinates.latitude,
-        longitude: location.coordinates.longitude,
-      },
-      radius: 200, // 200 meters radius
+    const placesResult = await radarCall('searchPlaces', {
+      near: userLocation,
+      radius: SEARCH_RADIUS_METERS,
+      categories: SAFETY_PLACE_CATEGORIES,
       limit: 20,
     });
-    
-    const places = placesResult.places || [];
-    
-    // Check for restricted places
-    const restrictedPlaces = places.filter(place => {
-      const category = place.categories?.[0]?.toLowerCase() || '';
-      return Object.keys(RESTRICTED_PLACE_TYPES).some(
-        type => category.includes(type) || place.name?.toLowerCase().includes(type)
-      );
-    });
-    
-    if (restrictedPlaces.length > 0) {
-      return {
-        canCall: false,
-        reason: `User is near a restricted location: ${restrictedPlaces[0].name}`,
-        nearbyPlaces: restrictedPlaces,
-        distance: restrictedPlaces[0].metadata?.distance,
-        userLocation: location.coordinates,
-      };
-    }
-    
-    return {
-      canCall: true,
-      reason: 'Location verified - no restricted zones nearby',
-      nearbyPlaces: places.slice(0, 5),
-      userLocation: location.coordinates,
-    };
-    
-  } catch (error) {
-    console.error('Radar error:', error);
-    return {
-      canCall: true,
-      reason: 'Location service unavailable - proceeding with call',
-      nearbyPlaces: [],
-      error: error.message,
-    };
-  }
-}
-
-/**
- * Fallback location check without Radar SDK
- */
-async function checkLocationWithFallback() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve({
-        canCall: true,
-        reason: 'Geolocation not supported',
-        nearbyPlaces: [],
+    const places = Array.isArray(placesResult.places) ? placesResult.places : [];
+    const restricted = places.filter(place => restrictedPlace(place));
+    if (restricted.length) {
+      const place = restricted[0];
+      return blocked(`Citizen is near ${place.name || RESTRICTED_PLACE_TYPES[restrictedPlace(place)]}; automated call skipped.`, {
+        nearbyPlaces: restricted,
+        userLocation,
+        restrictedPlace: place.name || RESTRICTED_PLACE_TYPES[restrictedPlace(place)],
       });
-      return;
     }
-    
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          canCall: true,
-          reason: 'Location accessed (Radar not configured)',
-          userLocation: {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          },
-          nearbyPlaces: [],
-        });
-      },
-      (error) => {
-        resolve({
-          canCall: true,
-          reason: `Location access denied: ${error.message}`,
-          nearbyPlaces: [],
-        });
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
-  });
+    return { canCall: true, reason: 'Citizen location verified; no restricted place nearby.', nearbyPlaces: places.slice(0, 5), userLocation };
+  } catch (error) {
+    console.error('Radar place check failed:', error);
+    return blocked('Radar could not verify the citizen location, so the automated call is held.', { userLocation, error: error.message });
+  }
 }
 
-/**
- * Search for specific place types near a location
- */
-export async function searchNearbyPlaces(location, tags = [], radius = 500) {
-  if (!radarInitialized) {
-    return [];
+/** Check the current browser location, used only by the safety diagnostics UI. */
+export async function checkLocationForCalling() {
+  if (!radarInitialized && !initRadar()) {
+    return blocked('Radar safety verification is not configured, so the automated call is held.');
   }
-  
   try {
-    const result = await Radar.searchPlaces({
-      near: location,
-      radius,
-      tags,
-      limit: 10,
-    });
-    
+    const tracked = await radarCall('trackOnce');
+    const location = tracked.location || {};
+    const coordinates = location.coordinates || location;
+    return checkCoordinatesForCalling({ latitude: coordinates.latitude, longitude: coordinates.longitude });
+  } catch (error) {
+    console.error('Radar location check failed:', error);
+    return blocked('Could not verify the current location, so the automated call is held.', { error: error.message });
+  }
+}
+
+export async function searchNearbyPlaces(location, tags = [], radius = 500) {
+  if (!radarInitialized && !initRadar()) return [];
+  try {
+    const result = await radarCall('searchPlaces', { near: location, radius, categories: tags, limit: 10 });
     return result.places || [];
   } catch (error) {
     console.error('Error searching places:', error);
@@ -189,20 +147,10 @@ export async function searchNearbyPlaces(location, tags = [], radius = 500) {
   }
 }
 
-/**
- * Reverse geocode a location to get address
- */
 export async function reverseGeocode(latitude, longitude) {
-  if (!radarInitialized) {
-    return null;
-  }
-  
+  if (!radarInitialized && !initRadar()) return null;
   try {
-    const result = await Radar.reverseGeocode({
-      latitude,
-      longitude,
-    });
-    
+    const result = await radarCall('reverseGeocode', { latitude, longitude });
     return result.addresses?.[0] || null;
   } catch (error) {
     console.error('Reverse geocode error:', error);
@@ -210,36 +158,16 @@ export async function reverseGeocode(latitude, longitude) {
   }
 }
 
-/**
- * Check if coordinates are within Kopargaon area
- */
 export function isWithinKopargaonArea(latitude, longitude) {
-  const center = KOPARGAON_CENTER;
-  const maxDistanceKm = 10; // 10km radius from center
-  
-  const distance = calculateDistance(
-    center.latitude, center.longitude,
-    latitude, longitude
-  );
-  
-  return distance <= maxDistanceKm;
+  return calculateDistance(KOPARGAON_CENTER.latitude, KOPARGAON_CENTER.longitude, latitude, longitude) <= 10;
 }
 
-/**
- * Calculate distance between two coordinates (Haversine formula)
- */
 function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Earth's radius in km
+  const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-function toRad(deg) {
-  return deg * (Math.PI / 180);
-}
+function toRad(deg) { return deg * (Math.PI / 180); }
